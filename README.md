@@ -5,17 +5,20 @@
 ### 目前后端写的是我自己的模搭社区的apikey，大家测试一下然后写自己的就行了（乐）前端设置或者后端写死都可以，开发者有每天两千次的免费调用，但是限额每个模型最多五百次，所以我写了一个满额自己切换的功能。
 
 
-<img width="2560" height="1057" alt="image" src="https://github.com/user-attachments/assets/87e15a84-a875-4c70-8428-ef1895cacc41" />
+<img width="2560" height="1047" alt="image" src="https://github.com/user-attachments/assets/9fe07660-8559-45bf-b22c-66348455952c" />
 
 ## 功能特性
 
 ### 核心功能
 - **自动化处理流程**：解压 -> 去重 -> 预览生成 -> 焦点检测 -> 1024x1024 裁剪 -> 智能打标 -> 打包输出
+<img width="1625" height="757" alt="image" src="https://github.com/user-attachments/assets/c27e1a92-3103-48fd-9d98-e8d6d50fb858" />
 - **超高分辨率支持**：轻松处理长边 3000+ 像素甚至 4000 万像素的图片
 - **双模式运行**：
   - 本地 CLI 模式：强隐私、省带宽、速度快
   - Web UI 模式：直观操作、进度实时展示、结果预览
 - **隐私优先**：本地模式无需上传原始图片
+<img width="1652" height="1006" alt="image" src="https://github.com/user-attachments/assets/a50faf0b-dff6-4573-bb58-c47b47bbb73a" />
+
 
 ## 快速开始
 
