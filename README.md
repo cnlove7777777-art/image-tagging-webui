@@ -14,6 +14,7 @@
 - **Export presets (LoRA/SD, general)**
 
 #### 目前后端写的是我自己的模搭社区的apikey，大家测试一下然后写自己的就行了（乐）前端设置或者后端写死都可以，开发者有每天两千次的免费调用，但是限额每个模型最多五百次，所以我写了一个满额自己切换的功能。
+#### 好用点赞谢谢喵，需要功能可以提交~o( =∩ω∩= )m
 
 
 <img width="2560" height="1047" alt="image" src="https://github.com/user-attachments/assets/9fe07660-8559-45bf-b22c-66348455952c" />
