@@ -1,267 +1,147 @@
 # LoRA 写真数据集自动构建平台
 
-一个既能本地运行（强隐私/省带宽），又能作为网站提供 UI 的 LoRA 写真数据集自动构建平台。
+一个高效、灵活的 LoRA 写真数据集自动构建工具，支持本地 CLI 和 Web UI 两种运行模式，支持本地部署的多模态模型的调用，专注于隐私保护和高性能处理。
 
-# 目前后端写的是我自己的模搭社区的apikey，大家测试一下然后写自己的就行了（乐）
+### 目前后端写的是我自己的模搭社区的apikey，大家测试一下然后写自己的就行了（乐）前端设置或者后端写死都可以，开发者有每天两千次的免费调用，但是限额每个模型最多五百次，所以我写了一个满额自己切换的功能。
 
-# 前端设置或者后端写死都可以，开发者有每天两千次的免费调用，但是限额每个模型最多五百次，所以我写了一个满额自己切换的功能。
+
 <img width="2560" height="1057" alt="image" src="https://github.com/user-attachments/assets/87e15a84-a875-4c70-8428-ef1895cacc41" />
 
 ## 功能特性
 
 ### 核心功能
-- **自动处理流程**：解压 -> 去重 -> 压缩预览 -> 调用 VL 取核心点 -> 用原图裁 1024 -> 最终打标 -> 打包
-- **支持超高分辨率图片**：处理长边 3000~4000+ 像素甚至 4000 万像素的图片
-- **多种运行模式**：本地 CLI 和 Web UI 两种方式
-- **隐私保护**：本地模式无需上传原图到服务器
-- **实时进度**：Web 模式支持 SSE 实时推送任务进度
-
-### 本地 CLI 模式
-- 支持完整的处理流程
-- 详细的日志输出
-- 灵活的配置参数
-- 支持批量处理
-
-### Web UI 模式
-- Vue 前端：支持多选 zip 和文件夹选择
-- FastAPI 后端：任务管理、进度展示、结果预览、下载
-- 支持两种上传方式：原始 zip 和准备好的 1024 数据集 zip
-
-## 目录结构
-
-```
-lora-dataset-builder/
-├── backend/                 # FastAPI后端
-│   ├── app/                 # 应用代码
-│   ├── Dockerfile           # Docker构建文件
-│   ├── requirements.txt     # 依赖列表
-│   └── .env.example         # 环境变量示例
-├── frontend/                # Vue前端
-│   ├── src/                 # 应用代码
-│   ├── Dockerfile           # Docker构建文件
-│   ├── package.json         # 依赖列表
-│   └── nginx.conf           # Nginx配置
-├── client/                  # 本地Python CLI
-│   ├── src/                 # 应用代码
-│   ├── requirements.txt     # 依赖列表
-│   └── setup.py             # 安装配置
-├── docker-compose.yml       # Docker Compose配置
-└── README.md                # 项目说明
-```
+- **自动化处理流程**：解压 -> 去重 -> 预览生成 -> 焦点检测 -> 1024x1024 裁剪 -> 智能打标 -> 打包输出
+- **超高分辨率支持**：轻松处理长边 3000+ 像素甚至 4000 万像素的图片
+- **双模式运行**：
+  - 本地 CLI 模式：强隐私、省带宽、速度快
+  - Web UI 模式：直观操作、进度实时展示、结果预览
+- **隐私优先**：本地模式无需上传原始图片
 
 ## 快速开始
 
-### 本地 CLI 模式
+### Web UI 模式（推荐）
 
-#### 安装依赖
+#### 1. 配置端口（可选）
+
+编辑 `config/ports.json` 文件，自定义端口配置：
+
+```json
+{
+  "backend_port": 8081,
+  "backend_host": "0.0.0.0",
+  "frontend_port": 8080,
+  "redis_port": 6379
+}
+```
+
+#### 2. 启动后端服务
+
+```bash
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8081
+```
+
+#### 3. 启动前端服务
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+#### 4. 访问应用
+
+打开浏览器访问：http://localhost:8080
+
+### 本地 CLI 模式
 
 ```bash
 cd client
 pip install -r requirements.txt
 pip install -e .
+
+# 执行完整处理流程
+lora-dataset-builder run-all --input input_root --output output_root
 ```
 
-#### 设置环境变量
+## 项目结构
 
-```bash
-cp .env.example .env
-# 编辑 .env 文件，设置 MODELSCOPE_TOKEN
+```
+lora-dataset-builder/
+├── backend/                 # FastAPI后端
+│   ├── app/                 # 应用核心代码
+│   │   ├── api/             # API接口定义
+│   │   ├── core/            # 配置和核心功能
+│   │   ├── db/              # 数据库配置
+│   │   ├── models/          # 数据模型
+│   │   ├── services/        # 业务逻辑服务
+│   │   └── tasks/           # 异步任务
+│   ├── requirements.txt     # 后端依赖
+│   └── Dockerfile           # Docker构建文件
+├── client/                  # 本地Python CLI工具
+│   ├── src/                 # CLI源代码
+│   ├── requirements.txt     # CLI依赖
+│   └── setup.py             # 安装配置
+├── config/                  # 配置文件
+│   └── ports.json           # 端口配置
+├── frontend/                # Vue前端应用
+│   ├── src/                 # 前端源代码
+│   │   ├── components/      # Vue组件
+│   │   ├── router/          # 路由配置
+│   │   ├── services/        # API服务
+│   │   └── views/           # 页面视图
+│   ├── package.json         # 前端依赖
+│   └── vite.config.ts       # Vite配置
+├── docs/                    # 文档
+└── docker-compose.yml       # Docker Compose配置
 ```
 
-#### 运行命令
+## 技术实现
 
-1. **准备文件夹**：解压、去重、生成预览
-   ```bash
-   lora-dataset-builder prepare-folder --input input_root --output prepared_root
-   ```
+### 后端实现
+- **框架**：FastAPI 提供高性能 RESTful API
+- **数据库**：SQLAlchemy + SQLite 轻量级数据存储
+- **任务处理**：异步任务处理，支持进度实时更新
+- **图像处理**：Pillow + NumPy 高效图像操作
+- **模型调用**：兼容 OpenAI SDK 的模型客户端，支持自定义模型服务
 
-2. **焦点检测**：调用 VL 模型获取核心点
-   ```bash
-   lora-dataset-builder focus --prepared prepared_root
-   ```
+### 前端实现
+- **框架**：Vue3 + TypeScript 提供类型安全的开发体验
+- **UI 组件**：Element Plus 构建现代化界面
+- **路由**：Vue Router 实现单页应用路由
+- **API 交互**：Axios 处理 HTTP 请求，支持 SSE 实时进度
 
-3. **裁剪 1024**：用原图按核心点裁 1024x1024
-   ```bash
-   lora-dataset-builder crop1024 --prepared prepared_root
-   ```
+### 核心处理流程
 
-4. **生成标签**：调用 VL 模型生成标签
-   ```bash
-   lora-dataset-builder tag --prepared prepared_root
-   ```
+1. **解压与初始化**：解析上传的 ZIP 文件，创建任务记录
+2. **智能去重**：基于 pHash 和图像特征的高效去重算法
+3. **预览生成**：生成压缩预览图，优化前端加载速度
+4. **焦点检测**：调用视觉模型检测图像核心区域
+5. **精确裁剪**：根据焦点区域裁剪 1024x1024 训练图像
+6. **智能打标**：使用视觉语言模型生成详细图像标签
+7. **打包输出**：生成最终的训练数据集 ZIP 包
 
-5. **打包**：生成最终的 train_package.zip
-   ```bash
-   lora-dataset-builder pack --prepared prepared_root --output output_root
-   ```
+## 使用说明
 
-6. **执行完整流程**：依次执行以上所有步骤
-   ```bash
-   lora-dataset-builder run-all --input input_root --output output_root
-   ```
-
-### Web UI 模式
-
-#### 环境变量配置
-
-1. **后端配置**
-   ```bash
-   cd backend
-   cp .env.example .env
-   # 编辑 .env 文件，设置 MODELSCOPE_TOKEN 等参数
-   ```
-
-2. **前端配置**
-   ```bash
-   cd frontend
-   cp .env.example .env
-   # 编辑 .env 文件，设置 API 地址等参数
-   ```
-
-#### 运行服务
-
-使用 Docker Compose 启动所有服务：
-
-```bash
-docker-compose up -d
-```
-
-服务启动后：
-- 前端访问：http://localhost:8080
-- 后端 API：http://localhost:8081/api
-- Redis：http://localhost:6379
-
-端口配置写在 `config/ports.json`，前后端启动时会读取该文件并强制使用其中的端口（含 Redis 端口）。
-
-#### 使用 Web UI
-
-1. 打开浏览器访问 http://localhost:8080
-2. 选择上传方式：
-   - 选择多个 zip 文件
-   - 选择一个文件夹，系统会自动过滤其中的 .zip 文件
-3. 填写模型参数（可选，默认值已填充）
-4. 点击上传，查看任务进度
+### Web UI 使用
+1. 访问 http://localhost:8080
+2. 选择上传方式：多个 ZIP 文件或文件夹
+3. 配置模型参数（可选）
+4. 点击上传，查看实时进度
 5. 任务完成后，下载生成的 train_package.zip
 
-## 环境变量配置
+### 自定义模型服务
 
-### 后端环境变量
+在设置页面中，可以配置自定义的模型服务地址和 API 密钥，支持：
+- 自定义模型地址
+- API 密钥配置
+- 焦点检测模型选择
+- 打标模型选择
 
-| 变量名 | 描述 | 默认值 |
-|-------|------|-------|
-| DATABASE_URL | 数据库连接字符串 | sqlite:///./data/db.sqlite3 |
-| REDIS_URL | Redis 连接字符串 | redis://localhost:6379/0 |
-| MODELSCOPE_TOKEN | ModelScope API 令牌 | - |
-| BASE_URL | ModelScope API 地址 | https://api-inference.modelscope.cn/v1/ |
-| FOCUS_MODEL | 焦点检测模型 | Qwen/Qwen3-VL-30B-A3B-Instruct |
-| TAG_MODEL | 打标模型 | Qwen/Qwen3-VL-235B-A22B-Instruct |
-| FALLBACK_MODEL | 回退模型 | Qwen/Qwen3-VL-32B-Instruct |
-| MAX_UPLOAD_MB | 最大上传大小（MB） | 2048 |
-| PHASH_THRESHOLD | pHash 聚类阈值 | 6 |
-| KEEP_PER_CLUSTER | 每簇保留图片数量 | 2 |
-| PREVIEW_MAX_SIDE | 预览图最大边长 | 1200 |
-| PREVIEW_JPEG_QUALITY | 预览图质量 | 86 |
-| MAX_IMAGE_PIXELS | 最大图片像素 | 1000000000 |
+## 许可证
 
-### 本地 CLI 环境变量
-
-| 变量名 | 描述 | 默认值 |
-|-------|------|-------|
-| MODELSCOPE_TOKEN | ModelScope API 令牌 | - |
-| BASE_URL | ModelScope API 地址 | https://api-inference.modelscope.cn/v1/ |
-
-## 核心 API
-
-### 任务管理
-
-| 方法 | 路径 | 描述 |
-|------|------|------|
-| POST | /api/tasks | 创建单个任务 |
-| POST | /api/tasks/batch | 批量创建任务 |
-| GET | /api/tasks | 获取所有任务 |
-| GET | /api/tasks/{id} | 获取单个任务详情 |
-| GET | /api/tasks/{id}/images | 获取任务图片列表 |
-| GET | /api/tasks/{id}/download | 下载任务结果 |
-| GET | /api/tasks/{id}/events | SSE 实时进度 |
-
-## 技术栈
-
-### 后端
-- FastAPI
-- Celery + Redis
-- SQLAlchemy 2.x
-- SQLite（默认）/ Postgres
-- Pillow + numpy + imagehash
-- OpenAI SDK（兼容 ModelScope API）
-
-### 前端
-- Vue3 + Vite + TS
-- Element Plus
-- Vue Router
-- Axios
-
-### 本地 CLI
-- Python
-- Typer
-- Pillow + numpy + imagehash
-- OpenAI SDK
-
-### 部署
-- Docker + Docker Compose
-- Nginx
-
-## 常见问题
-
-### 1. 如何处理超大图片？
-
-平台已经对超大图片做了优化：
-- 任何阶段都不会一次性把所有图片读入内存
-- pHash/清晰度计算只对缩略图做
-- Pillow 的 MAX_IMAGE_PIXELS 可通过环境变量配置
-- 采用流式处理，逐张处理图片
-
-### 2. 如何提高处理速度？
-
-- 本地模式比 Web 模式快，因为无需网络传输
-- 可以调整并发数（Web 模式）
-- 可以使用更强大的硬件
-
-### 3. 如何处理模型调用失败？
-
-- 平台会自动重试 5 次，每次间隔指数增长
-- 如果连续失败，会使用回退模型
-- 详细的错误日志会记录到数据库
-
-### 4. 如何保护隐私？
-
-- 推荐使用本地 CLI 模式，无需上传原图
-- Web 模式支持上传准备好的 1024 数据集 zip，无需上传原图
-
-### 5. 如何调整处理参数？
-
-- 本地模式：通过命令行参数调整
-- Web 模式：通过环境变量调整
-
-## 开发指南
-
-### 后端开发
-
-```bash
-cd backend
-# 安装依赖
-pip install -r requirements.txt
-# 运行开发服务器
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8081
-# 运行 Celery worker
-celery -A app.tasks.celery_app worker --loglevel=info
-```
-
-### 前端开发
-
-```bash
-cd frontend
-# 安装依赖
-npm install
+MIT License
 # 运行开发服务器
 npm run dev
 ```
