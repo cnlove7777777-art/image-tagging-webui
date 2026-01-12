@@ -3,7 +3,7 @@
 ###  一键把压缩包里的大量人像/写真整理成可训练的数据集：去重 → 1024 方形裁切 → 关键点辅助 → 自动/半自动打标 → 导出。支持本地部署的多模态模型的调用，专注于隐私保护和高性能处理。
 ### Build training-ready portrait datasets from archives: dedup → square crop → keypoint assist → auto/semi-auto tagging → export.
 ###  Highlights
--  **  Batch import from zip/7z + folder  ** 
+-  **Batch import from zip/7z + folder** 
 
 - **Fast dedup (perceptual hash / embedding)**
 
