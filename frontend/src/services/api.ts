@@ -29,6 +29,7 @@ export interface DedupParams {
 export interface ProcessingSettings {
   caption_prompt: string
   dedup_params: DedupParams
+  crop_output_size: number
 }
 
 export interface LogEntry {

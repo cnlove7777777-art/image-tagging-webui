@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, JSON, Boolean, Float
+from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import relationship
 from .task import Base
 
@@ -19,6 +20,6 @@ class Image(Base):
     width = Column(Integer)
     height = Column(Integer)
     selected = Column(Boolean, default=True)
-    meta_json = Column(JSON, default=dict)
+    meta_json = Column(MutableDict.as_mutable(JSON), default=dict)
 
     task = relationship("Task", back_populates="images")

@@ -29,3 +29,7 @@ DEFAULT_DEDUP_PARAMS = {
     "bbox_tol_wh": 0.06,
     "keep_per_cluster": 2,
 }
+
+DEFAULT_CROP_OUTPUT_SIZE = 1024
+MIN_CROP_OUTPUT_SIZE = 64
+MAX_CROP_OUTPUT_SIZE = 4096

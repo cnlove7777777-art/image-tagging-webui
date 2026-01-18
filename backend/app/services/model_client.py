@@ -96,12 +96,12 @@ class ModelClient:
         logger.error("已尝试所有模型，均失败")
         raise Exception("已尝试所有模型，均失败")
 
-    def get_focus_point(self, image_path: str) -> Dict[str, Any]:
+    def get_focus_point(self, image_path: str, retry_hint: Optional[str] = None) -> Dict[str, Any]:
         try:
             base64_image = self._encode_image(image_path)
 
             prompt = """Analyze this image and identify the main focus point. Return a JSON object with:
-            - focus_point: {x, y} normalized coordinates (0-1) of the main focus
+            - focus_point: {x, y, side} normalized (0-1). side is the square crop ratio based on the short edge.
             - bbox: optional {x1, y1, x2, y2} normalized bounding box
             - shot_type: optional "closeup", "medium", or "long"
             - confidence: 0.0-1.0 confidence score
@@ -109,7 +109,11 @@ class ModelClient:
             - reject_reason: reason if image is not usable (e.g., too_blurry, subject_not_clear)
             - reason: short reason for the focus point
 
+            Crop rule: choose the LARGEST possible square crop. Prefer side=1.0 (use the full short edge).
+            Only reduce side if needed to fully include the main subject.
             Only return valid JSON, no additional text."""
+            if retry_hint:
+                prompt = f"{prompt}\nNOTE: {retry_hint}"
 
             messages = [
                 {

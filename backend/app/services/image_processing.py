@@ -3,6 +3,8 @@ import numpy as np
 from PIL import Image as PILImage, ImageOps
 import imagehash
 
+from app.core.defaults import DEFAULT_CROP_OUTPUT_SIZE, MIN_CROP_OUTPUT_SIZE, MAX_CROP_OUTPUT_SIZE
+
 
 def calculate_sharpness(image: PILImage.Image) -> float:
     """Calculate image sharpness using Laplacian variance"""
@@ -53,8 +55,9 @@ def crop_1024_from_original(
     output_dir: str,
     quality: int = 95,
     side: float = 1.0,
+    output_size: int = DEFAULT_CROP_OUTPUT_SIZE,
 ) -> str:
-    """Crop 1024x1024 square from original image, centered at (x,y) with optional side ratio (0-1)."""
+    """Crop square from original image, centered at (x,y) with optional side ratio (0-1)."""
     with PILImage.open(image_path) as img:
         # Convert to RGB if needed
         if img.mode != 'RGB':
@@ -102,8 +105,10 @@ def crop_1024_from_original(
         # Crop image
         cropped = img.crop((left, top, right, bottom))
         
-        # Resize to 1024x1024
-        cropped = cropped.resize((1024, 1024), PILImage.LANCZOS)
+        # Resize to output square size
+        size = int(output_size) if output_size else DEFAULT_CROP_OUTPUT_SIZE
+        size = max(MIN_CROP_OUTPUT_SIZE, min(MAX_CROP_OUTPUT_SIZE, size))
+        cropped = cropped.resize((size, size), PILImage.LANCZOS)
         
         # Generate output path
         filename = os.path.basename(image_path)

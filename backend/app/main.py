@@ -189,11 +189,13 @@ class SettingsTestResponse(BaseModel):
 class AppSettingsResponse(BaseModel):
     caption_prompt: str
     dedup_params: Dict[str, Union[float, int]]
+    crop_output_size: int
 
 
 class AppSettingsUpdate(BaseModel):
     caption_prompt: Optional[str] = None
     dedup_params: Optional[Dict[str, Union[float, int]]] = None
+    crop_output_size: Optional[int] = None
 
 def _get_task_or_404(db: Session, task_id: int) -> Task:
     task = db.query(Task).filter(Task.id == task_id).first()
@@ -765,7 +767,17 @@ def update_crop(task_id: int, item_id: int, payload: CropUpdatePayload, db: Sess
     cy = crop_square.get("cy", 0.5)
     side = crop_square.get("side", 1.0)
     # Convert side to half-size scaling
-    crop_path = processing.crop_1024_from_original(image.orig_path, cx, cy, dirs["images"], quality=95, side=side)
+    app_settings = load_app_settings(db)
+    crop_output_size = int(app_settings.get("crop_output_size", 1024) or 1024)
+    crop_path = processing.crop_1024_from_original(
+        image.orig_path,
+        cx,
+        cy,
+        dirs["images"],
+        quality=95,
+        side=side,
+        output_size=crop_output_size,
+    )
     meta = image.meta_json or {}
     meta["crop_square_user"] = {"cx": cx, "cy": cy, "side": side, "source": payload.source}
     image.meta_json = meta
@@ -955,6 +967,7 @@ def save_app_settings(payload: AppSettingsUpdate, db: Session = Depends(get_db))
         db,
         caption_prompt=payload.caption_prompt,
         dedup_params=parsed,
+        crop_output_size=payload.crop_output_size,
     )
 
 

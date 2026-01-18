@@ -32,6 +32,10 @@ from .celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
+# Model focus retry rules for crop selection.
+_MIN_MODEL_CROP_SIDE = 0.9
+_MAX_FOCUS_RETRIES = 2
+
 # Global task cancel token to force-stop running tasks.
 _CANCEL_LOCK = threading.Lock()
 _CANCEL_VERSION = 0
@@ -507,6 +511,91 @@ def dedup_task(task_id: int, auto_continue: bool = False, dedup_params: dict = N
             pass
 
 
+def _ensure_image_size(image: Image) -> None:
+    if image.width and image.height:
+        return
+    if not image.orig_path:
+        return
+    try:
+        with PILImage.open(image.orig_path) as pil_img:
+            image.width, image.height = pil_img.size
+    except Exception:
+        image.width = image.width or 0
+        image.height = image.height or 0
+
+
+def _bbox_is_valid(bbox: dict) -> bool:
+    for key in ("x1", "y1", "x2", "y2"):
+        val = bbox.get(key)
+        if not isinstance(val, (int, float)):
+            return False
+        if val < 0.0 or val > 1.0:
+            return False
+    return bbox["x2"] > bbox["x1"] and bbox["y2"] > bbox["y1"]
+
+
+def _estimate_focus_side(focus_result: dict, image: Image) -> Optional[float]:
+    focus_point = focus_result.get("focus_point") or {}
+    side = focus_point.get("side")
+    if isinstance(side, (int, float)):
+        return float(side)
+    bbox = focus_result.get("bbox") or {}
+    if not bbox or not _bbox_is_valid(bbox):
+        return None
+    bw = bbox.get("x2", 0) - bbox.get("x1", 0)
+    bh = bbox.get("y2", 0) - bbox.get("y1", 0)
+    if bw <= 0 or bh <= 0:
+        return None
+    iw, ih = image.width or 0, image.height or 0
+    if iw > 0 and ih > 0:
+        return max(bw * iw, bh * ih) / max(1, min(iw, ih))
+    return max(bw, bh)
+
+
+def _is_focus_result_reasonable(focus_result: dict, image: Image, min_side: float) -> bool:
+    if not isinstance(focus_result, dict):
+        return False
+    focus_point = focus_result.get("focus_point") or {}
+    cx = focus_point.get("x")
+    cy = focus_point.get("y")
+    if not isinstance(cx, (int, float)) or not isinstance(cy, (int, float)):
+        return False
+    if cx < 0.0 or cx > 1.0 or cy < 0.0 or cy > 1.0:
+        return False
+    bbox = focus_result.get("bbox")
+    if bbox is not None and not _bbox_is_valid(bbox):
+        return False
+    side = _estimate_focus_side(focus_result, image)
+    if side is not None and side < min_side:
+        return False
+    return True
+
+
+def _sanitize_focus_result(focus_result: dict, min_side: float) -> dict:
+    if not isinstance(focus_result, dict):
+        return {"focus_point": {"x": 0.5, "y": 0.5}}
+    result = dict(focus_result)
+    focus_point = dict(result.get("focus_point") or {})
+    try:
+        cx = float(focus_point.get("x", 0.5))
+    except (TypeError, ValueError):
+        cx = 0.5
+    try:
+        cy = float(focus_point.get("y", 0.5))
+    except (TypeError, ValueError):
+        cy = 0.5
+    focus_point["x"] = max(0.0, min(1.0, cx))
+    focus_point["y"] = max(0.0, min(1.0, cy))
+    side = focus_point.get("side")
+    if isinstance(side, (int, float)) and side < min_side:
+        focus_point["side"] = min_side
+    result["focus_point"] = focus_point
+    bbox = result.get("bbox")
+    if bbox is not None and not _bbox_is_valid(bbox):
+        result.pop("bbox", None)
+    return result
+
+
 def crop_task(task_id: int, auto_continue: bool = False) -> None:
     """Run focus detection + cropping for selected images."""
     db = SessionLocal()
@@ -533,6 +622,9 @@ def crop_task(task_id: int, auto_continue: bool = False) -> None:
             model=task.focus_model,
         )
 
+        app_settings = get_app_settings(db)
+        crop_output_size = int(app_settings.get("crop_output_size", 1024) or 1024)
+
         images = db.query(Image).filter(Image.task_id == task_id, Image.selected == True).all()  # noqa: E712
         total = max(1, len(images))
 
@@ -540,7 +632,42 @@ def crop_task(task_id: int, auto_continue: bool = False) -> None:
             if _check_cancel(db, task, task_id, cancel_version):
                 return
             try:
+                _ensure_image_size(image)
                 focus_result = model_client.get_focus_point(image.preview_path or image.orig_path)
+                if focus_result.get("usable", True):
+                    retry_hint = (
+                        "Previous result produced an invalid crop. "
+                        "Return the LARGEST possible square crop (side near 1.0 = full short edge). "
+                        f"Avoid crop side < {_MIN_MODEL_CROP_SIDE}."
+                    )
+                    attempt = 0
+                    valid = _is_focus_result_reasonable(focus_result, image, _MIN_MODEL_CROP_SIDE)
+                    while not valid and attempt < _MAX_FOCUS_RETRIES:
+                        attempt += 1
+                        _add_log(
+                            db,
+                            task_id,
+                            LogLevel.WARNING,
+                            f"检测到裁切框异常，重新请求模型 ({attempt}/{_MAX_FOCUS_RETRIES}) {image.orig_name}",
+                        )
+                        focus_result = model_client.get_focus_point(
+                            image.preview_path or image.orig_path,
+                            retry_hint=retry_hint,
+                        )
+                        valid = _is_focus_result_reasonable(focus_result, image, _MIN_MODEL_CROP_SIDE)
+                    if not valid:
+                        _add_log(
+                            db,
+                            task_id,
+                            LogLevel.WARNING,
+                            f"模型返回仍不合理，使用安全回退 {image.orig_name}",
+                        )
+                        focus_result = _sanitize_focus_result(focus_result, _MIN_MODEL_CROP_SIDE)
+                        if not _is_focus_result_reasonable(focus_result, image, _MIN_MODEL_CROP_SIDE):
+                            focus_result.pop("bbox", None)
+                            fp = focus_result.get("focus_point") or {}
+                            fp.pop("side", None)
+                            focus_result["focus_point"] = fp
                 meta = image.meta_json or {}
                 meta["focus"] = focus_result
                 usable = focus_result.get("usable", True)
@@ -580,20 +707,13 @@ def crop_task(task_id: int, auto_continue: bool = False) -> None:
                     bw = bbox.get("x2", 0) - bbox.get("x1", 0)
                     bh = bbox.get("y2", 0) - bbox.get("y1", 0)
                     iw, ih = image.width or 0, image.height or 0
-                    if (not iw or not ih) and image.orig_path:
-                        try:
-                            with PILImage.open(image.orig_path) as pil_img:
-                                iw, ih = pil_img.size
-                                image.width, image.height = iw, ih
-                        except Exception:
-                            iw, ih = 0, 0
                     if bw > 0 and bh > 0 and iw > 0 and ih > 0:
                         side = max(bw * iw, bh * ih) / max(1, min(iw, ih))
                     else:
                         side = max(bw, bh)
                 if side is None:
                     side = 1.0
-                side = max(0.05, min(1.0, side))
+                side = max(_MIN_MODEL_CROP_SIDE, min(1.0, side))
                 crop_path = crop_1024_from_original(
                     image.orig_path,
                     cx,
@@ -601,6 +721,7 @@ def crop_task(task_id: int, auto_continue: bool = False) -> None:
                     dirs["images"],
                     quality=95,
                     side=side,
+                    output_size=crop_output_size,
                 )
                 image.crop_path = crop_path
                 meta["crop_square_model"] = {"cx": cx, "cy": cy, "side": side, "source": "model"}
