@@ -1,35 +1,55 @@
 <template>
   <div class="settings-section">
-    <el-form :model="settingsForm" label-width="120px">
-      <el-form-item label="Base URL">
-        <el-input v-model="settingsForm.base_url" placeholder="https://api-inference.modelscope.cn/v1" />
+    <el-alert
+      title="模型服务由后端配置"
+      type="info"
+      :closable="false"
+      show-icon
+      class="provider-alert"
+    >
+      <div>
+        API Key、Base URL 和模型供应商现在从后端 yml / 环境变量读取。前端只展示可用供应商与模型，不再保存密钥。
+      </div>
+    </el-alert>
+
+    <el-form label-width="120px">
+      <el-form-item label="默认供应商">
+        <el-tag type="primary">{{ modelInfo.default_provider || '未配置' }}</el-tag>
       </el-form-item>
-      <el-form-item label="API Key">
-        <el-input v-model="settingsForm.api_key" type="password" show-password placeholder="ModelScope Token" />
+
+      <el-form-item label="供应商状态">
+        <div class="provider-list">
+          <el-card v-for="provider in modelInfo.providers" :key="provider.id" shadow="never" class="provider-card">
+            <div class="provider-header">
+              <div>
+                <div class="provider-title">{{ provider.display_name || provider.id }}</div>
+                <div class="provider-sub">{{ provider.id }}</div>
+              </div>
+              <el-tag :type="provider.configured ? 'success' : 'warning'">
+                {{ provider.configured ? '后端已配置密钥' : '缺少环境变量密钥' }}
+              </el-tag>
+            </div>
+            <div class="provider-meta">Base URL：{{ provider.base_url || '-' }}</div>
+            <div class="provider-meta">默认视觉模型：{{ provider.default_vision_model || '-' }}</div>
+            <div class="provider-models">
+              <el-tag v-for="model in provider.models" :key="model.id" size="small">
+                {{ model.label || model.id }}
+              </el-tag>
+            </div>
+          </el-card>
+          <el-empty v-if="!modelInfo.providers.length" description="后端未返回模型供应商" />
+        </div>
       </el-form-item>
-      <el-form-item label="模型优先级">
-        <el-select v-model="settingsForm.model_priority" multiple collapse-tags placeholder="可选" style="width: 100%">
-          <el-option
-            v-for="item in defaultModels"
-            :key="item"
-            :label="item"
-            :value="item"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="启用自定义">
-        <el-switch v-model="settingsForm.enabled" />
-      </el-form-item>
-      <el-form-item label="???????">
+
+      <el-form-item label="裁切输出尺寸">
         <el-input v-model="cropOutputSizeText" placeholder="1024x1024" style="width: 220px" />
-        <div class="form-hint">?????????? 1:1</div>
+        <div class="form-hint">只支持正方形输出，例如 1024x1024。</div>
       </el-form-item>
-      <div class="setting-hint">启用后将通过请求头携带 Base URL / API Key / 模型优先级</div>
     </el-form>
+
     <div class="dialog-footer">
-      <el-button @click="resetSettings">恢复默认</el-button>
-      <el-button :loading="testing" @click="testConnection">测试连接</el-button>
-      <el-button type="primary" @click="saveSettings">保存并启用</el-button>
+      <el-button :loading="loadingModels" @click="loadModels">刷新模型列表</el-button>
+      <el-button type="primary" @click="saveSettings">保存裁切设置</el-button>
     </div>
   </div>
 </template>
@@ -37,33 +57,42 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { loadApiSettings, saveApiSettings, testSettings, getProcessingSettings, updateProcessingSettings } from '../services/api'
+import { getModels, getProcessingSettings, updateProcessingSettings } from '../services/api'
 
 const emit = defineEmits<{
   save: []
 }>()
 
-const settingsForm = ref(loadApiSettings())
+interface ProviderModel {
+  id: string
+  label?: string
+  tasks?: string[]
+}
+
+interface ProviderInfo {
+  id: string
+  display_name?: string
+  configured?: boolean
+  base_url?: string
+  default_vision_model?: string
+  models: ProviderModel[]
+}
+
 const cropOutputSizeText = ref('1024x1024')
-const testing = ref(false)
-const defaultModels = [
-  'Qwen/Qwen3-VL-30B-A3B-Instruct',
-  'Qwen/Qwen3-VL-235B-A22B-Instruct',
-  'Qwen/Qwen3-VL-32B-Instruct',
-  'Qwen/Qwen3-VL-72B-Instruct'
-]
+const loadingModels = ref(false)
+const modelInfo = ref<{ default_provider?: string; providers: ProviderInfo[] }>({ providers: [] })
 
 const parseCropOutputSize = (value: string) => {
   const raw = String(value || '').trim().toLowerCase()
   const match = raw.match(/^(\d+)(?:\s*x\s*(\d+))?$/)
-  if (!match) return { size: null, error: '????? 1024x1024 ???' }
+  if (!match) return { size: null, error: '请输入类似 1024x1024 的尺寸' }
   const size = Number(match[1])
   const size2 = match[2] ? Number(match[2]) : size
   if (!Number.isFinite(size) || size <= 0) {
-    return { size: null, error: '??????????' }
+    return { size: null, error: '尺寸必须是正整数' }
   }
-  if (size2 != size) {
-    return { size: null, error: '???1:1??????????' }
+  if (size2 !== size) {
+    return { size: null, error: '当前只支持 1:1 正方形输出' }
   }
   return { size, error: null }
 }
@@ -82,40 +111,10 @@ const saveCropOutputSize = async () => {
 }
 
 const saveSettings = async () => {
-  saveApiSettings(settingsForm.value)
   const ok = await saveCropOutputSize()
   if (ok) {
     emit('save')
-    ElMessage.success('???API??')
-  }
-}
-
-const resetSettings = () => {
-  settingsForm.value = {
-    base_url: '',
-    api_key: '',
-    model_priority: [],
-    enabled: false
-  }
-  saveApiSettings(settingsForm.value)
-  cropOutputSizeText.value = '1024x1024'
-  updateProcessingSettings({ crop_output_size: 1024 }).catch(() => {})
-}
-
-const testConnection = async () => {
-  testing.value = true
-  try {
-    const res = await testSettings({ ...settingsForm.value, enabled: true })
-    if (res?.ok) {
-      ElMessage.success(res.message || '连接成功')
-    } else {
-      ElMessage.error(res?.message || '连接失败')
-    }
-  } catch (err) {
-    console.error(err)
-    ElMessage.error('连接测试失败')
-  } finally {
-    testing.value = false
+    ElMessage.success('裁切设置已保存')
   }
 }
 
@@ -130,10 +129,26 @@ const loadCropOutputSize = async () => {
   }
 }
 
+const loadModels = async () => {
+  loadingModels.value = true
+  try {
+    const models = await getModels()
+    modelInfo.value = {
+      default_provider: (models as any).default_provider,
+      providers: (models as any).providers || []
+    }
+  } catch (error) {
+    console.error('Failed to load models', error)
+    ElMessage.error('模型列表加载失败')
+  } finally {
+    loadingModels.value = false
+  }
+}
+
 onMounted(() => {
   loadCropOutputSize()
+  loadModels()
 })
-
 </script>
 
 <style scoped>
@@ -141,17 +156,48 @@ onMounted(() => {
   padding: 10px 0;
 }
 
-.setting-hint {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 4px;
-  margin-bottom: 12px;
+.provider-alert {
+  margin-bottom: 16px;
 }
 
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.provider-card {
+  width: 100%;
+  background-color: var(--card);
+  border-color: var(--border);
+}
+
+.provider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.provider-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.provider-sub,
+.provider-meta,
 .form-hint {
   font-size: 12px;
   color: var(--muted);
-  margin-top: 4px;
+}
+
+.provider-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .dialog-footer {
