@@ -33,6 +33,7 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 - [x] Preserve `get_focus_point()` as a compatibility wrapper.
 - [x] Add strict JSON prompt for crop + pose + scene + color + training value.
 - [x] Add JSON response parsing and coordinate sanitization.
+- [x] Add shared `vision_metadata` normalization helpers.
 - [x] Add frontend TypeScript types for `vision` metadata.
 - [x] Add backend task stage enum: `vision_analysis`.
 - [ ] Add `vision_analyze_task()` in `backend/app/tasks/processing.py`.
@@ -45,17 +46,10 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 
 ## P2: Semantic de-duplication
 
-- [ ] Add `backend/app/services/semantic_dedup.py`.
-- [ ] Compare images using:
-  - `shot_type`
-  - `body_visibility`
-  - `pose_family`
-  - `view_angle`
-  - `camera_angle`
-  - `pose_signature`
-  - `subject_bbox` similarity
-  - optional expression difference
-- [ ] Output `cluster_id`, `similarity_score`, and `similarity_reasons`.
+- [x] Add `backend/app/services/semantic_dedup.py`.
+- [x] Add conservative `semantic_similarity()` scoring based on framing, pose signature, viewpoint, occlusion, and subject bbox.
+- [x] Add representative selection helper based on training value and confidence.
+- [ ] Output `cluster_id`, `similarity_score`, and `similarity_reasons` into image metadata.
 - [ ] Keep the best 2-3 images per cluster by training value, confidence, sharpness, and crop completeness.
 - [ ] Keep existing `dedup_people.py` as fallback / prefilter.
 
@@ -81,6 +75,7 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 - [x] Add `.github/workflows/ci.yml`.
 - [x] Frontend CI: `npm ci && npm run build`.
 - [x] Backend smoke CI: `compileall` + provider config load check.
+- [x] Add CI smoke checks for vision normalization and semantic similarity.
 - [ ] Add pytest.
 - [ ] Add unit tests for provider config parsing.
 - [ ] Add unit tests for vision JSON sanitization.
@@ -90,3 +85,4 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 
 - DashScope model list fetching is implemented as optional OpenAI-compatible `GET {base_url}/models`. If Alibaba Cloud changes or restricts that endpoint, the yml static model list remains the fallback.
 - The current branch has not yet completed the processing pipeline rewrite. It is safe as a partial refactor branch, not yet ready to merge into `main`.
+- `processing.py` and `main.py` are large legacy files. Continue by changing them in small, reviewable commits rather than one full-file rewrite.
