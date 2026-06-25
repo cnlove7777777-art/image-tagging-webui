@@ -68,3 +68,46 @@ jobs:
           print('default_provider=', payload['default_provider'])
           print('providers=', [p['id'] for p in payload['providers']])
           PY
+
+      - name: Validate vision metadata helpers
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from app.services.vision_metadata import normalize_vision, focus_result_from_vision
+          from app.services.semantic_dedup import semantic_similarity
+
+          raw = {
+              'crop_square': {'cx': 2, 'cy': -1, 'side': 0},
+              'subject_bbox': {'x1': -1, 'y1': 0.1, 'x2': 1.2, 'y2': 0.9},
+              'pose_family': 'standing',
+              'shot_type': 'full_body',
+              'view_angle': 'front',
+          }
+          vision = normalize_vision(raw)
+          assert vision['crop_square']['cx'] == 1.0
+          assert vision['crop_square']['cy'] == 0.0
+          assert vision['crop_square']['side'] >= 0.05
+          focus = focus_result_from_vision(vision)
+          assert focus['focus_point']['x'] == vision['crop_square']['cx']
+
+          a = normalize_vision({
+              'shot_type': 'full_body',
+              'body_visibility': 'full_body',
+              'pose_family': 'standing',
+              'view_angle': 'front',
+              'pose_signature': {'left_arm': 'down', 'right_arm': 'near_face'},
+              'subject_bbox': {'x1': 0.1, 'y1': 0.05, 'x2': 0.8, 'y2': 0.95},
+          })
+          b = normalize_vision({
+              'shot_type': 'full_body',
+              'body_visibility': 'full_body',
+              'pose_family': 'standing',
+              'view_angle': 'front',
+              'pose_signature': {'left_arm': 'down', 'right_arm': 'near_face'},
+              'subject_bbox': {'x1': 0.12, 'y1': 0.05, 'x2': 0.82, 'y2': 0.95},
+          })
+          score = semantic_similarity(a, b)
+          assert score['is_similar'] is True
+          print('semantic_score=', score)
+          PY
