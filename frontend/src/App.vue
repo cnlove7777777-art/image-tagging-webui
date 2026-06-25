@@ -41,7 +41,7 @@
               <span class="meta-text">{{ task.progress }}%</span>
             </div>
           </div>
-          <div v-if="!tasks.length" class="empty-hint">暂无项目，点击上方"新建上传"</div>
+          <div v-if="!tasks.length" class="empty-hint">暂无项目，点击上方“新建上传”</div>
         </div>
       </div>
 
@@ -51,7 +51,7 @@
       <header class="topbar">
         <div class="title-stack">
           <div class="page-title">{{ currentTitle }}</div>
-          <div class="page-sub">高级去重 | 美观界面 | 实时任务与裁切预览</div>
+          <div class="page-sub">结构化视觉分析 | 高级去重 | 实时任务与裁切预览</div>
         </div>
         <div class="top-actions">
           <el-button text icon="Message">反馈</el-button>
@@ -92,35 +92,7 @@ const loadingTasks = ref(false)
 const selectedTaskId = ref<number | null>(null)
 const refreshTimer = ref<number | null>(null)
 const theme = ref(localStorage.getItem('theme') || 'dark')
-
 const settingsVisible = ref(false)
-
-
-// 鍘婚噸璁剧疆鐩稿叧
-const dedupSettingsForm = ref({
-  face_sim_th1: 0.80,
-  face_sim_th2: 0.85,
-  pose_sim_th: 0.98,
-  face_ssim_th1: 0.95,
-  face_ssim_th2: 0.90,
-  bbox_tol_c: 0.04,
-  bbox_tol_wh: 0.06
-})
-
-// 浠巐ocalStorage鍔犺浇鍘婚噸璁剧疆
-const loadDedupSettings = () => {
-  const savedSettings = localStorage.getItem('dedupSettings')
-  if (savedSettings) {
-    const parsed = JSON.parse(savedSettings)
-    dedupSettingsForm.value = {
-      ...dedupSettingsForm.value,
-      ...parsed
-    }
-  }
-}
-
-// 鍔犺浇鍘婚噸璁剧疆
-loadDedupSettings()
 
 const currentTitle = computed(() => {
   if (route.path.includes('upload')) return '上传任务'
@@ -201,7 +173,6 @@ const toggleTheme = () => {
 onMounted(() => {
   applyTheme()
   loadTasks()
-  // Only set up refresh timer if no taskId is in URL initially
   if (!route.query.taskId) {
     refreshTimer.value = window.setInterval(() => loadTasks(true), 5000)
   }
@@ -210,16 +181,13 @@ onMounted(() => {
   }
 })
 
-// Watch for route changes to pause/resume refresh timer
 watch(() => route.query.taskId, (newTaskId, oldTaskId) => {
   selectedTaskId.value = newTaskId ? Number(newTaskId) : null
   
   if (newTaskId && !oldTaskId && refreshTimer.value) {
-    // Pause refresh timer when taskId is added to URL
     clearInterval(refreshTimer.value)
     refreshTimer.value = null
   } else if (!newTaskId && oldTaskId && !refreshTimer.value) {
-    // Resume refresh timer when taskId is removed from URL
     refreshTimer.value = window.setInterval(() => loadTasks(true), 5000)
   }
 })
@@ -229,8 +197,6 @@ onBeforeUnmount(() => {
     clearInterval(refreshTimer.value)
   }
 })
-
-
 </script>
 
 <style scoped>
@@ -471,54 +437,5 @@ onBeforeUnmount(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-.setting-hint {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-/* 璁剧疆椤甸潰鏍峰紡 */
-.settings-layout {
-  display: flex;
-  gap: 20px;
-  min-height: 400px;
-}
-.settings-sidebar {
-  width: 200px;
-  background-color: var(--panel);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-.settings-menu {
-  background-color: transparent;
-  border-right: none;
-}
-.settings-menu :deep(.el-menu-item) {
-  background-color: transparent;
-  border-radius: 0;
-}
-.settings-menu :deep(.el-menu-item.is-active) {
-  background-color: var(--accent);
-  color: white;
-}
-.settings-content {
-  flex: 1;
-  overflow-y: auto;
-}
-.settings-section {
-  padding: 10px 0;
-}
-.form-hint {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 4px;
-  margin-bottom: 8px;
 }
 </style>
