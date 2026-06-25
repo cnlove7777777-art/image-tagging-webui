@@ -1,0 +1,92 @@
+# Vision Analysis Refactor TODO
+
+Branch: `refactor/vision-analysis-schema`
+
+## Goal
+
+Upgrade the project from a crop-only VLM workflow to a backend-owned visual metadata workflow:
+
+```text
+prepare -> vision_analyze -> semantic_dedup -> crop -> caption
+```
+
+The VLM should output crop coordinates plus structured metadata for pose, framing, expression, occlusion, scene, color, and training value. Backend code validates/caches the result and uses it for crop execution and semantic de-duplication.
+
+## P0: Backend-owned model providers
+
+- [x] Add `config/model_providers.yml`.
+- [x] Add `backend/app/core/model_providers.py`.
+- [x] Add ModelScope provider config.
+- [x] Add Alibaba Cloud DashScope provider config.
+- [x] Use env vars for secrets: `DASHSCOPE_API_KEY`, `MODELSCOPE_TOKEN`.
+- [x] Add optional OpenAI-compatible provider placeholder.
+- [x] Change `/api/models` to return provider-driven model lists.
+- [x] Remove frontend API Key / Base URL UI.
+- [x] Stop frontend request layer from sending API secrets.
+- [ ] Remove backend acceptance of `api_key`, `base_url`, `X-Ext-Api-Key`, `X-Ext-Base-Url` from task creation endpoints.
+- [ ] Add explicit `provider` field to task creation.
+- [ ] Store provider id in task config or schema.
+
+## P1: Structured VLM analysis
+
+- [x] Add `ModelClient.analyze_image()`.
+- [x] Preserve `get_focus_point()` as a compatibility wrapper.
+- [x] Add strict JSON prompt for crop + pose + scene + color + training value.
+- [x] Add JSON response parsing and coordinate sanitization.
+- [x] Add frontend TypeScript types for `vision` metadata.
+- [x] Add backend task stage enum: `vision_analysis`.
+- [ ] Add `vision_analyze_task()` in `backend/app/tasks/processing.py`.
+- [ ] Add API endpoint: `POST /api/tasks/{task_id}/analyze`.
+- [ ] Write `image.meta_json["vision"]`.
+- [ ] Mirror `vision.crop_square` into `crop_square_model`.
+- [ ] Mirror `vision.shot_type`, `vision.confidence`, `vision.usable` into summary fields.
+- [ ] Update `_image_summary()` to return `vision`.
+- [ ] Change `crop_task()` to prefer `vision.crop_square` before calling VLM again.
+
+## P2: Semantic de-duplication
+
+- [ ] Add `backend/app/services/semantic_dedup.py`.
+- [ ] Compare images using:
+  - `shot_type`
+  - `body_visibility`
+  - `pose_family`
+  - `view_angle`
+  - `camera_angle`
+  - `pose_signature`
+  - `subject_bbox` similarity
+  - optional expression difference
+- [ ] Output `cluster_id`, `similarity_score`, and `similarity_reasons`.
+- [ ] Keep the best 2-3 images per cluster by training value, confidence, sharpness, and crop completeness.
+- [ ] Keep existing `dedup_people.py` as fallback / prefilter.
+
+## P3: Frontend inspection UI
+
+- [ ] Show visual metadata in task detail image cards:
+  - shot type
+  - body visibility
+  - pose family
+  - view angle
+  - expression
+  - occlusion
+  - environment
+  - colors
+  - skin exposure / outfit coverage
+  - training value
+- [ ] Add filters by vision fields.
+- [ ] Show duplicate cluster id and duplicate reasons.
+- [ ] Add an "Analyze" button before Crop.
+
+## P4: CI and tests
+
+- [x] Add `.github/workflows/ci.yml`.
+- [x] Frontend CI: `npm ci && npm run build`.
+- [x] Backend smoke CI: `compileall` + provider config load check.
+- [ ] Add pytest.
+- [ ] Add unit tests for provider config parsing.
+- [ ] Add unit tests for vision JSON sanitization.
+- [ ] Add unit tests for semantic similarity scoring.
+
+## Notes
+
+- DashScope model list fetching is implemented as optional OpenAI-compatible `GET {base_url}/models`. If Alibaba Cloud changes or restricts that endpoint, the yml static model list remains the fallback.
+- The current branch has not yet completed the processing pipeline rewrite. It is safe as a partial refactor branch, not yet ready to merge into `main`.
