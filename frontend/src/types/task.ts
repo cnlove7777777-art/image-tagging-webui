@@ -1,8 +1,61 @@
+export interface VisionBBox {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+export interface VisionCropSquare {
+  cx: number
+  cy: number
+  side: number
+}
+
+export interface VisionPoseSignature {
+  torso_direction?: string
+  head_direction?: string
+  left_arm?: string
+  right_arm?: string
+  left_leg?: string
+  right_leg?: string
+  prop_interaction?: string
+}
+
+export interface VisionMetadata {
+  subject_bbox?: VisionBBox
+  head_bbox?: VisionBBox | null
+  crop_square?: VisionCropSquare
+  shot_type?: string
+  body_visibility?: string
+  view_angle?: string
+  camera_angle?: string
+  pose_family?: string
+  pose_signature?: VisionPoseSignature
+  expression?: string
+  expression_intensity?: string
+  face_occlusion?: string
+  body_occlusion?: string
+  environment?: string
+  background_complexity?: string
+  lighting?: string
+  dominant_colors?: string[]
+  overall_palette?: string
+  color_temperature?: string
+  skin_exposure_level?: string
+  outfit_coverage?: string
+  costume_complexity?: string
+  training_value?: string
+  usable?: boolean
+  reject_reason?: string | null
+  confidence?: number
+  reason?: string
+}
+
 export interface Task {
   id: number
   name: string
   status: 'uploading' | 'pending' | 'processing' | 'completed' | 'error'
-  stage: 'initial' | 'unpacking' | 'de_duplication' | 'preview_generation' | 'focus_detection' | 'cropping' | 'tagging' | 'packaging' | 'finished'
+  stage: 'initial' | 'unpacking' | 'de_duplication' | 'preview_generation' | 'vision_analysis' | 'focus_detection' | 'cropping' | 'tagging' | 'packaging' | 'finished'
   progress: number
   message: string
   progress_detail: {
@@ -62,6 +115,7 @@ export interface TaskImage {
     usable?: boolean
     reject_reason?: string
   }
+  vision?: VisionMetadata
   crop_square_model?: any
   crop_square_user?: any
   decision?: {
