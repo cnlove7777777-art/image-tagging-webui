@@ -8,16 +8,14 @@
     :close-on-press-escape="true"
   >
     <div class="settings-layout">
-      <!-- 左侧菜单 -->
       <div class="settings-sidebar">
         <el-menu :default-active="activeSettingsTab" class="settings-menu" @select="handleSettingsTabChange">
-          <el-menu-item index="api">API设置</el-menu-item>
+          <el-menu-item index="api">模型服务</el-menu-item>
           <el-menu-item index="dedup">去重参数</el-menu-item>
           <el-menu-item index="caption">提示词模板</el-menu-item>
         </el-menu>
       </div>
       
-      <!-- 右侧内容 -->
       <div class="settings-content">
         <ApiSettings v-if="activeSettingsTab === 'api'" @save="settingsSaved" />
         <DedupSettings v-else-if="activeSettingsTab === 'dedup'" @save="settingsSaved" />
@@ -58,7 +56,6 @@ const settingsSaved = () => {
 </script>
 
 <style scoped>
-/* 设置页面样式 */
 .settings-layout {
   display: flex;
   gap: 20px;
