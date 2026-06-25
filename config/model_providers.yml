@@ -1,0 +1,56 @@
+# Backend-owned model provider configuration.
+# Secrets are read from environment variables; never expose API keys to the frontend.
+# DashScope OpenAI-compatible base_url is configurable here because provider endpoints may change.
+
+default_provider: aliyun_dashscope
+
+providers:
+  aliyun_dashscope:
+    enabled: true
+    display_name: "Alibaba Cloud DashScope"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key_env: "DASHSCOPE_API_KEY"
+    dynamic_model_list: true
+    model_list_path: "/models"
+    default_vision_model: "qwen-vl-plus"
+    default_focus_model: "qwen-vl-plus"
+    default_tag_model: "qwen-vl-plus"
+    models:
+      - id: "qwen-vl-plus"
+        label: "qwen-vl-plus"
+        tasks: ["vision_analyze", "focus", "caption", "tag"]
+      - id: "qwen-vl-max"
+        label: "qwen-vl-max"
+        tasks: ["vision_analyze", "focus", "caption", "tag"]
+
+  modelscope:
+    enabled: true
+    display_name: "ModelScope"
+    base_url: "https://api-inference.modelscope.cn/v1/"
+    api_key_env: "MODELSCOPE_TOKEN"
+    dynamic_model_list: false
+    default_vision_model: "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    default_focus_model: "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    default_tag_model: "Qwen/Qwen3-VL-235B-A22B-Instruct"
+    models:
+      - id: "Qwen/Qwen3-VL-30B-A3B-Instruct"
+        label: "Qwen3-VL 30B A3B"
+        tasks: ["vision_analyze", "focus", "caption", "tag"]
+      - id: "Qwen/Qwen3-VL-235B-A22B-Instruct"
+        label: "Qwen3-VL 235B A22B"
+        tasks: ["vision_analyze", "caption", "tag"]
+      - id: "Qwen/Qwen3-VL-32B-Instruct"
+        label: "Qwen3-VL 32B"
+        tasks: ["vision_analyze", "focus", "caption", "tag"]
+
+  openai_compatible:
+    enabled: false
+    display_name: "Custom OpenAI Compatible"
+    base_url: "http://localhost:8000/v1"
+    api_key_env: "OPENAI_COMPATIBLE_API_KEY"
+    dynamic_model_list: true
+    model_list_path: "/models"
+    default_vision_model: ""
+    default_focus_model: ""
+    default_tag_model: ""
+    models: []
