@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - refactor/**
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+  backend-smoke:
+    name: Backend smoke checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install lightweight check dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyYAML==6.0.2 httpx==0.27.0 pydantic==2.6.1 pydantic-settings==2.1.0 python-dotenv==1.0.1
+
+      - name: Compile backend source
+        run: python -m compileall app
+
+      - name: Validate provider config can load
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from app.core.model_providers import public_provider_payload
+          payload = public_provider_payload(refresh_dynamic=False)
+          assert payload.get('providers'), 'No model providers returned'
+          assert payload.get('default_provider'), 'No default provider configured'
+          print('default_provider=', payload['default_provider'])
+          print('providers=', [p['id'] for p in payload['providers']])
+          PY
