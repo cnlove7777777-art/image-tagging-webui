@@ -20,6 +20,7 @@ class TaskStage(str, enum.Enum):
     UNPACKING = "unpacking"
     DE_DUPLICATION = "de_duplication"
     PREVIEW_GENERATION = "preview_generation"
+    VISION_ANALYSIS = "vision_analysis"
     FOCUS_DETECTION = "focus_detection"
     CROPPING = "cropping"
     TAGGING = "tagging"
@@ -40,6 +41,8 @@ class Task(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     focus_model = Column(String)
     tag_model = Column(String)
+    # Legacy columns kept for old DB compatibility. New code should resolve secrets
+    # from backend provider config instead of storing them per task.
     api_key = Column(String, nullable=True)
     base_url = Column(String, nullable=True)
     config = Column(JSON, default=dict)
