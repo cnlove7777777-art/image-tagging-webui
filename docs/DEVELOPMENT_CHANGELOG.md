@@ -6,6 +6,62 @@ This document records recent development fixes that should be remembered by futu
 
 ---
 
+## 2026-06-26: Log mojibake and image metadata normalization
+
+### Symptom
+
+Backend logs in the frontend showed mojibake such as:
+
+```text
+鍘婚噸淇濈暀 warning_serious.png face_conf=0.00 pose_conf=0.00 鍗犳瘮=- cluster=0
+鍘婚噸涓㈠純 thinking.png face_conf=0.00 pose_conf=0.00 鍗犳瘮=- cluster=7
+```
+
+Dedup result cards also still displayed legacy fields only:
+
+```text
+占比: -
+人脸: 无
+可用: 是
+```
+
+### Root cause
+
+There are two separate issues:
+
+1. Some backend log strings were already stored as mojibake literals, for example `鍘婚噸` instead of `去重`.
+2. The planned structured VLM pipeline is not fully connected yet. The UI expects richer fields, but the current task flow still mainly uses the old `dedup_people.py` features and old `focus` metadata.
+
+### Fix
+
+- `frontend/src/services/api.ts`
+  - Added log message repair in `getLogs()` so existing bad log rows display as readable Chinese.
+  - Added `normalizeTaskImage()` so task image summaries merge fields from `meta_json.vision`, `meta_json.focus`, and legacy dedup metadata.
+  - If backend later returns `meta_json.vision`, frontend cards can immediately use `vision.subject_bbox`, `vision.crop_square`, `vision.shot_type`, `vision.confidence`, and `vision.usable`.
+
+- `backend/app/models/log.py`
+  - Added `repair_mojibake_message()` on log writes so future `Log(...)` rows are less likely to persist known mojibake fragments.
+
+### Follow-up
+
+This does not replace the planned vision pipeline. The real fix is still:
+
+```text
+prepare -> vision_analyze -> semantic_dedup -> crop -> caption
+```
+
+Add `vision_analyze_task()` and write `image.meta_json["vision"]` before dedup/crop so one model call can produce:
+
+- crop square;
+- subject bbox;
+- head bbox / face visibility;
+- pose family;
+- shot type / composition;
+- usable / training value;
+- confidence / reason.
+
+---
+
 ## 2026-06-26: Provider model-list tab refresh/crash fix
 
 ### Symptom
