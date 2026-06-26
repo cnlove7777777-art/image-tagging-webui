@@ -27,6 +27,24 @@ export interface ProviderInfo {
   models: ProviderModel[]
 }
 
+export interface ProviderRuntimeConfig {
+  provider_id: string
+  base_url?: string
+  api_key_masked?: string
+  has_api_key?: boolean
+  default_vision_model?: string
+  default_focus_model?: string
+  default_tag_model?: string
+}
+
+export interface ProviderRuntimeConfigUpdate {
+  base_url?: string
+  api_key?: string
+  default_vision_model?: string
+  default_focus_model?: string
+  default_tag_model?: string
+}
+
 export interface ModelList {
   default_provider?: string
   providers?: ProviderInfo[]
@@ -78,6 +96,19 @@ const buildSseUrl = (path: string) => {
 
 export const getModels = async (refresh = false): Promise<ModelList> => {
   const response = await api.get<ModelList>('/models', { params: refresh ? { refresh: true } : undefined })
+  return response.data
+}
+
+export const getProviderRuntimeConfig = async (providerId: string): Promise<ProviderRuntimeConfig> => {
+  const response = await api.get<ProviderRuntimeConfig>(`/models/providers/${providerId}/runtime-config`)
+  return response.data
+}
+
+export const saveProviderRuntimeConfig = async (
+  providerId: string,
+  payload: ProviderRuntimeConfigUpdate
+): Promise<ProviderRuntimeConfig> => {
+  const response = await api.post<ProviderRuntimeConfig>(`/models/providers/${providerId}/runtime-config`, payload)
   return response.data
 }
 
