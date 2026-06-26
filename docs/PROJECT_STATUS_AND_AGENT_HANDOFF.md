@@ -2,7 +2,7 @@
 
 分支：`refactor/vision-analysis-schema`
 
-本文档用于记录当前项目目标、目录结构、数据流、正在实现的重构方向、TODO，以及交给后续 Agent / Codex / 本地模型继续维护时使用的提示词。任何后续修改都应同步维护本文档与 `docs/VISION_ANALYSIS_REFACTOR_TODO.md`。
+本文档用于记录当前项目目标、目录结构、数据流、正在实现的重构方向、TODO，以及交给后续 Agent / Codex / 本地模型继续维护时使用的提示词。任何后续修改都应同步维护本文档、`docs/VISION_ANALYSIS_REFACTOR_TODO.md` 与 `docs/FRONTEND_REVIEW_NOTES.md`。
 
 ---
 
@@ -11,7 +11,7 @@
 本项目是一个面向 LoRA / SD / 人像写真 / coser 数据集构建的 WebUI 工具。它的目标不是做复杂的传统 CV 研究，而是提供一个实用的图片数据集整理流水线：
 
 1. 上传压缩包或文件夹；
-2. 解压并生成预览；
+2. 安全解压并生成预览；
 3. 分析图片主体、裁切框、姿势、景别、表情、遮挡、场景、主色调与训练价值；
 4. 去掉重复或姿势/构图过近的图片；
 5. 生成统一尺寸裁切图；
@@ -29,7 +29,7 @@
 ```text
 frontend/      Vue 3 + TypeScript + Vite + Element Plus
 backend/       Python FastAPI + SQLAlchemy + Pillow + OpenAI-compatible SDK
-config/        后端端口、模型 provider 配置
+config/        端口、静态模型 provider 配置
 docs/          项目文档、重构 TODO、Agent 交接文档
 .github/       GitHub Actions 基础 CI
 ```
@@ -50,11 +50,11 @@ image-tagging-webui/
 │  ├─ app/
 │  │  ├─ api/
 │  │  │  └─ endpoints/
-│  │  │     └─ models.py                  # /api/models，已改为 provider 配置驱动
+│  │  │     └─ models.py                  # /api/models 与 provider 管理接口
 │  │  ├─ core/
 │  │  │  ├─ config.py                     # 全局 settings
 │  │  │  ├─ defaults.py                   # 默认提示词 / 去重参数等
-│  │  │  └─ model_providers.py            # 新增：后端模型 provider 注册表
+│  │  │  └─ model_providers.py            # 后端模型 provider 注册表，合并静态 yml + runtime provider
 │  │  ├─ models/
 │  │  │  ├─ image.py                      # 图片记录模型
 │  │  │  ├─ log.py                        # 日志模型
@@ -64,39 +64,50 @@ image-tagging-webui/
 │  │  │  ├─ dedup_people.py               # 旧去重：InsightFace + MediaPipe + SSIM，暂作 fallback
 │  │  │  ├─ image_processing.py           # 预览、裁切等图像处理
 │  │  │  ├─ model_client.py               # 模型调用；已新增 analyze_image()
+│  │  │  ├─ provider_runtime_config.py    # 新增：后端本地保存 provider、Base URL、API Key、模型列表
 │  │  │  ├─ semantic_dedup.py             # 新增：结构化 vision 元数据相似度打分
 │  │  │  └─ vision_metadata.py            # 新增：vision JSON 归一化与 focus 兼容转换
 │  │  ├─ tasks/
 │  │  │  ├─ celery_app.py
 │  │  │  └─ processing.py                 # 主流水线；仍待接入 vision_analyze_task
 │  │  └─ main.py                          # FastAPI 主入口；仍待接入 /analyze 接口
-│  └─ requirements.txt                    # 已加入 PyYAML
+│  ├─ requirements.txt                    # 已加入 PyYAML
+│  └─ sitecustomize.py                    # 新增：ZIP 安全解压补丁
 │
 ├─ config/
 │  ├─ ports.json
-│  └─ model_providers.yml                 # 新增：后端模型 provider 配置
+│  └─ model_providers.yml                 # 静态 provider 配置与默认模型
 │
 ├─ frontend/
 │  ├─ src/
 │  │  ├─ components/
-│  │  │  └─ ApiSettings.vue               # 已移除前端 API Key / Base URL 设置
+│  │  │  └─ ApiSettings.vue               # 模型供应商管理器：添加/编辑/删除/测试 provider
 │  │  ├─ services/
-│  │  │  └─ api.ts                        # 已停止从前端发送 API secrets
+│  │  │  └─ api.ts                        # provider 管理 API client + 任务 API
 │  │  ├─ types/
-│  │  │  └─ task.ts                       # 已新增 VisionMetadata 类型
+│  │  │  └─ task.ts                       # VisionMetadata 类型
 │  │  └─ views/
-│  │     ├─ Upload.vue                    # 待加入 provider 选择 / analyze 流程入口
+│  │     ├─ Upload.vue                    # 待进一步修复 zip 过滤/重复队列/上传提示
 │  │     └─ TaskList.vue                  # 待展示 vision 元数据与语义重复簇
 │  └─ package.json
 │
 ├─ docs/
+│  ├─ FRONTEND_REVIEW_NOTES.md            # 前端审查记录
 │  ├─ VISION_ANALYSIS_REFACTOR_TODO.md    # 细化重构 TODO
 │  └─ PROJECT_STATUS_AND_AGENT_HANDOFF.md # 当前文档
 │
 └─ .github/
    └─ workflows/
-      └─ ci.yml                           # 基础 CI：前端 build + 后端 smoke checks
+      └─ ci.yml                           # 前端 build + 后端 smoke checks + zip smoke test
 ```
+
+运行时本地文件：
+
+```text
+backend/data/runtime/model_provider_secrets.json
+```
+
+该文件由前端“模型服务”页面保存到后端本地，包含 API Key 等敏感配置。它位于 `backend/data/` 下，不应提交到 Git。
 
 ---
 
@@ -119,8 +130,8 @@ flowchart TD
 1. VLM 只在裁切阶段输出裁切相关字段；
 2. 姿势检测来自 `dedup_people.py` 的 MediaPipe Pose，主要作为去重辅助；
 3. 视觉理解结果和裁切逻辑混在 `crop_task()` 里；
-4. 前端曾经保存并发送 API Key / Base URL，不适合长期维护；
-5. 模型 provider 和模型列表硬编码，不利于切换 ModelScope / 阿里云 / OpenAI-compatible 服务。
+4. provider 和模型列表硬编码，不利于切换 ModelScope / 阿里云 / OpenAI-compatible 服务；
+5. ZIP 解压曾直接依赖 `zipfile.extract()`，路径安全与中文 Windows ZIP 文件名兼容不足。
 
 ---
 
@@ -130,13 +141,14 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[上传 zip / 文件夹] --> B[prepare_task 解压并生成预览]
-    B --> C[vision_analyze_task 调 VLM 结构化分析]
-    C --> D[写入 image.meta_json.vision]
-    D --> E[semantic_dedup 基于 vision 字段判断姿势/构图重复]
-    E --> F[crop_task 读取 vision.crop_square 执行裁切]
-    F --> G[caption_task 生成训练提示词]
-    G --> H[manifest.json + train_package.zip]
+    A[上传 zip / 文件夹] --> B[safe zip extraction + prepare_task]
+    B --> C[生成预览与 image 记录]
+    C --> D[vision_analyze_task 调 VLM 结构化分析]
+    D --> E[写入 image.meta_json.vision]
+    E --> F[semantic_dedup 基于 vision 字段判断姿势/构图重复]
+    F --> G[crop_task 读取 vision.crop_square 执行裁切]
+    G --> H[caption_task 生成训练提示词]
+    H --> I[manifest.json + train_package.zip]
 ```
 
 结构化视觉分析返回：
@@ -180,22 +192,33 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[config/model_providers.yml] --> B[backend/app/core/model_providers.py]
-    C[环境变量 DASHSCOPE_API_KEY / MODELSCOPE_TOKEN] --> B
-    B --> D[/api/models]
-    D --> E[前端展示 provider / model / configured]
-    E --> F[上传任务只传模型选择，不传密钥]
-    B --> G[ModelClient.from_provider]
-    G --> H[OpenAI-compatible Chat Completions]
+    A[config/model_providers.yml 静态配置] --> C[model_providers.py]
+    B[backend/data/runtime/model_provider_secrets.json 本地运行时配置] --> C
+    C --> D[/api/models]
+    D --> E[前端模型供应商管理器]
+    E --> F[POST runtime-config 保存 Base URL/API Key/模型列表]
+    E --> G[POST provider test 测试连通性]
+    C --> H[ModelClient.from_provider]
+    H --> I[OpenAI-compatible Chat Completions]
 ```
 
 当前已实现：
 
 - `config/model_providers.yml`
 - `backend/app/core/model_providers.py`
+- `backend/app/services/provider_runtime_config.py`
 - `/api/models` provider-driven response
-- 前端设置页不再暴露 API Key / Base URL
-- 前端请求层不再发送 API Key / Base URL
+- `POST /api/models/providers` 创建自定义供应商
+- `DELETE /api/models/providers/{provider_id}` 删除 runtime provider
+- `GET/POST /api/models/providers/{provider_id}/runtime-config` 读取/保存后端本地配置
+- `POST /api/models/providers/{provider_id}/test` 测试连通性
+- 前端“模型服务”页面改为 provider manager 风格 UI
+
+注意：
+
+- API Key 可以从前端输入，但只提交给后端保存；不放 localStorage；不提交 Git；接口只返回 masked key。
+- 静态 provider 与 runtime provider 会合并显示。
+- 动态模型列表使用 OpenAI-compatible `GET {base_url}/{model_list_path}`，失败则保留静态/手动模型列表。
 
 仍待完成：
 
@@ -205,17 +228,52 @@ flowchart TD
 
 ---
 
-## 7. 当前已完成列表
+## 7. 上传 / ZIP 数据流
 
-### 后端模型配置
+当前上传入口：
+
+```mermaid
+flowchart TD
+    A[Upload.vue 选择 ZIP / 父文件夹] --> B[api.ts uploadTask / uploadFolderTask]
+    B --> C[main.py 创建 Task + 保存 upload_path]
+    C --> D[processing.prepare_task]
+    D --> E[zipfile.extract 被 sitecustomize.py 安全补丁拦截]
+    E --> F[data/tasks/{task_id}/unpack]
+    F --> G[扫描 jpg/jpeg/png/webp]
+    G --> H[生成 preview 与 Image 记录]
+```
+
+已修：
+
+- `backend/sitecustomize.py` 对 ZIP 解压做安全补丁；
+- 拒绝 `../evil.jpg`、绝对路径、Windows 盘符路径；
+- 标准化混合斜杠与 Windows 非法路径字符；
+- 对老 Windows 中文 ZIP 文件名做 GBK 恢复尝试；
+- CI 增加 safe ZIP smoke test。
+
+仍待修：
+
+- `Upload.vue` 需要过滤非 zip 文件；
+- `Upload.vue` 需要避免同一个 zip 重复入队；
+- 后端应对空 zip、坏 zip、无图片 zip 给出更明确的错误；
+- 后续重构 `processing.py` 时，应把 runtime monkey patch 替换成显式 `safe_extract_zip()` helper。
+
+---
+
+## 8. 当前已完成列表
+
+### 后端模型配置 / provider manager
 
 - [x] 新增 `config/model_providers.yml`
 - [x] 新增 `backend/app/core/model_providers.py`
 - [x] 默认 provider 设为 `aliyun_dashscope`
 - [x] 保留 `modelscope` provider
 - [x] 支持可选 `openai_compatible` provider
-- [x] API Key 从环境变量读取
+- [x] 支持 runtime-only 自定义 provider
+- [x] API Key 可由前端提交给后端本地保存
+- [x] API Key 不回显完整值，不写入 Git
 - [x] `/api/models` 返回 provider 列表、模型列表、configured 状态
+- [x] 支持 provider 连通性测试
 
 ### 视觉分析基础设施
 
@@ -226,10 +284,16 @@ flowchart TD
 - [x] `vision_metadata.py`
 - [x] `semantic_dedup.py`
 
+### 上传/解压
+
+- [x] `backend/sitecustomize.py` 安全 ZIP 解压补丁
+- [x] safe ZIP CI smoke test
+
 ### 前端
 
-- [x] `ApiSettings.vue` 删除 API Key / Base URL 输入
-- [x] `api.ts` 停止发送 `X-Ext-Api-Key` / `X-Ext-Base-Url`
+- [x] `ApiSettings.vue` 变为模型供应商管理器
+- [x] `api.ts` 增加 provider create/delete/runtime-config/test API client
+- [x] `api.ts` 不再把模型密钥附加到上传/任务请求里
 - [x] `task.ts` 增加 `VisionMetadata` 类型
 
 ### CI / 文档
@@ -239,17 +303,20 @@ flowchart TD
 - [x] 后端 compileall 检查
 - [x] provider 配置 smoke test
 - [x] vision normalization / semantic similarity smoke test
+- [x] safe zip extraction smoke test
 - [x] 新增 `docs/VISION_ANALYSIS_REFACTOR_TODO.md`
+- [x] 新增 `docs/FRONTEND_REVIEW_NOTES.md`
 - [x] 新增当前交接文档
 
 ---
 
-## 8. 正在实现中
+## 9. 正在实现中
 
 当前分支还不是可合并主线状态。正在实现的主线任务：
 
 ```text
 P1: 把 vision analysis 真正接入任务流水线
+P0.5: 把上传/ZIP 处理从补丁式修复收口为显式安全 helper
 ```
 
 具体包括：
@@ -261,18 +328,21 @@ P1: 把 vision analysis 真正接入任务流水线
 - [ ] 在 `main.py` 添加 `POST /api/tasks/{task_id}/analyze`；
 - [ ] 在 `run_full_pipeline()` 中加入 `vision_analyze_task`；
 - [ ] 修改 `crop_task()`，优先读取 `image.meta_json["vision"]["crop_square"]`；
-- [ ] 修改 `_image_summary()`，返回 `vision` 字段给前端。
+- [ ] 修改 `_image_summary()`，返回 `vision` 字段给前端；
+- [ ] 后端任务创建应保存 provider id；
+- [ ] 后续将 `sitecustomize.py` 的 ZIP 安全逻辑移动到 `processing.py` 显式 helper。
 
 ---
 
-## 9. TODO 优先级
+## 10. TODO 优先级
 
 ### P0：安全收口
 
 - [ ] 清理后端 task 创建接口里的 `api_key/base_url` 参数；
 - [ ] 清理 `X-Ext-Api-Key`、`X-Ext-Base-Url`、`X-Ext-Models` header 覆盖逻辑；
 - [ ] 为任务新增 provider 字段，或至少写入 `task.config["provider"]`；
-- [ ] 保证旧任务不崩：旧 DB 中存在 `api_key/base_url` 字段可以保留，但新代码不再使用。
+- [ ] 保证旧任务不崩：旧 DB 中存在 `api_key/base_url` 字段可以保留，但新代码不再使用；
+- [ ] 明确 README 或 docs 中的密钥安全说明：API Key 只允许保存到 ignored runtime file。
 
 ### P1：视觉分析闭环
 
@@ -296,7 +366,9 @@ P1: 把 vision analysis 真正接入任务流水线
 - [ ] 增加 vision 字段展示；
 - [ ] 增加按 `shot_type`、`pose_family`、`environment`、`training_value` 筛选；
 - [ ] 增加重复簇视图；
-- [ ] 增加可解释的 `similarity_reasons` 展示。
+- [ ] 增加可解释的 `similarity_reasons` 展示；
+- [ ] 修复 `Upload.vue` 剩余中文乱码；
+- [ ] 修复 `TaskList.vue` stage filter / pagination。
 
 ### P4：测试
 
@@ -304,11 +376,11 @@ P1: 把 vision analysis 真正接入任务流水线
 - [ ] 添加 provider config 单元测试；
 - [ ] 添加 vision JSON sanitization 单元测试；
 - [ ] 添加 semantic dedup 单元测试；
-- [ ] 后续考虑增加少量 mock 图片测试，但不要把大图片塞进仓库。
+- [ ] 添加更多 ZIP 边界测试，不把大图片塞进仓库。
 
 ---
 
-## 10. 给后续 Agent 的提示词
+## 11. 给后续 Agent 的提示词
 
 把下面提示词交给后续 Agent / Codex / 本地模型继续实现：
 
@@ -321,35 +393,40 @@ P1: 把 vision analysis 真正接入任务流水线
 当前技术栈：
 - 后端：Python FastAPI + SQLAlchemy + Pillow + OpenAI-compatible SDK
 - 前端：Vue 3 + TypeScript + Vite + Element Plus
-- 配置：config/model_providers.yml
-- 文档：docs/VISION_ANALYSIS_REFACTOR_TODO.md 和 docs/PROJECT_STATUS_AND_AGENT_HANDOFF.md
+- 静态配置：config/model_providers.yml
+- 本地运行时配置：backend/data/runtime/model_provider_secrets.json
+- 文档：docs/VISION_ANALYSIS_REFACTOR_TODO.md、docs/FRONTEND_REVIEW_NOTES.md 和 docs/PROJECT_STATUS_AND_AGENT_HANDOFF.md
 
 当前架构方向：
 旧流程：prepare -> dedup -> crop/VLM focus -> caption
-目标流程：prepare -> vision_analyze -> semantic_dedup -> crop -> caption
+目标流程：safe upload -> prepare -> vision_analyze -> semantic_dedup -> crop -> caption
 
 关键原则：
-1. API Key / Base URL 必须由后端管理，前端不得保存或发送模型密钥。
-2. 模型 provider 从 config/model_providers.yml 读取，密钥从环境变量读取。
+1. API Key 可以从前端输入，但只能保存到后端 ignored runtime file，不得写入 Git，不得放 localStorage，不得完整回显。
+2. 模型 provider 来自 config/model_providers.yml + backend/data/runtime/model_provider_secrets.json 的合并结果。
 3. VLM 调用要输出严格 JSON，不要依赖自由文本描述。
 4. 视觉分析结果统一写入 image.meta_json["vision"]。
 5. crop_task 应优先读取 vision.crop_square；只有没有 vision 时才 fallback 到旧 get_focus_point()。
 6. 去重应保守，误删比多留更糟。semantic_similarity() 只作为“姿势/构图重复候选”的规则基础。
 7. dedup_people.py 暂时不要删，可保留为传统 CV fallback / 预过滤。
 8. 修改 processing.py 和 main.py 要小步提交，不要一次整文件重写，因为它们包含上传、删除、SSE、任务状态和打包等旧逻辑。
-9. 每次完成阶段性改动，都要更新 docs/VISION_ANALYSIS_REFACTOR_TODO.md 和 docs/PROJECT_STATUS_AND_AGENT_HANDOFF.md。
-10. 每次修改后至少保证：前端 npm run build 能过，后端 python -m compileall app 能过，provider config smoke test 能过。
+9. 当前 backend/sitecustomize.py 是 ZIP 解压安全补丁，后续深改 processing.py 时应替换为显式 safe_extract_zip() helper。
+10. 每次完成阶段性改动，都要更新 docs/VISION_ANALYSIS_REFACTOR_TODO.md、docs/FRONTEND_REVIEW_NOTES.md 和 docs/PROJECT_STATUS_AND_AGENT_HANDOFF.md。
+11. 每次修改后至少保证：前端 npm run build 能过，后端 python -m compileall app sitecustomize.py 能过，provider config smoke test 能过，zip smoke test 能过。
 
 已经完成：
 - config/model_providers.yml
 - backend/app/core/model_providers.py
+- backend/app/services/provider_runtime_config.py
 - /api/models provider-driven
+- provider create/delete/runtime-config/test endpoints
 - ModelClient.analyze_image()
 - vision_metadata.py
 - semantic_dedup.py
-- 前端 ApiSettings.vue 移除密钥配置
-- 前端 api.ts 停止发送 API secrets
-- 前端 task.ts 增加 VisionMetadata
+- frontend ApiSettings.vue provider manager UI
+- frontend api.ts provider management client
+- frontend task.ts VisionMetadata
+- backend/sitecustomize.py safe zip extraction patch
 - CI smoke tests
 
 下一步优先任务：
@@ -360,25 +437,29 @@ P1: 把 vision analysis 真正接入任务流水线
 5. 后端 task 创建接口移除 API key/base URL/header override，改为 provider 后端配置。
 6. 前端 TaskList.vue 展示 vision 元数据。
 7. 接入 semantic_similarity，生成 semantic_dedup cluster。
+8. 把 ZIP 解压逻辑从 sitecustomize.py 迁移为 processing.py 中显式 helper。
+9. 修复 Upload.vue 非 zip 过滤、重复入队、中文乱码提示。
 
 不要声称已经跑通过完整项目，除非实际运行了 CI 或本地测试。若不能运行，也要明确说明只做了静态检查和 smoke test。
 ```
 
 ---
 
-## 11. 维护约定
+## 12. 维护约定
 
 后续每次改动都应同时维护：
 
 1. `docs/VISION_ANALYSIS_REFACTOR_TODO.md`：打勾或新增 TODO；
-2. `docs/PROJECT_STATUS_AND_AGENT_HANDOFF.md`：当结构、流程、关键文件变化时更新；
-3. CI：不能让 smoke test 长期失败；
-4. 前端不要重新引入 API Key / Base URL 表单；
-5. 后端不要把模型密钥写入任务记录或返回给前端。
+2. `docs/FRONTEND_REVIEW_NOTES.md`：前端结构/问题变化时更新；
+3. `docs/PROJECT_STATUS_AND_AGENT_HANDOFF.md`：当结构、流程、关键文件变化时更新；
+4. CI：不能让 smoke test 长期失败；
+5. 不要提交真实 API Key；
+6. 不要提交 `backend/data/runtime/model_provider_secrets.json`；
+7. 后端不要把模型密钥写入任务记录或完整返回给前端。
 
 ---
 
-## 12. 当前合并状态
+## 13. 当前合并状态
 
 当前分支是部分重构分支：
 
@@ -392,5 +473,7 @@ refactor/vision-analysis-schema
 - [ ] `/analyze` 接口可用；
 - [ ] `crop_task` 可读取 `vision.crop_square`；
 - [ ] 前端能展示 vision 字段；
+- [ ] provider manager 通过本地手动测试；
+- [ ] ZIP 上传至少手动测试：正常中文 zip、空 zip、坏 zip、路径穿越 zip；
 - [ ] CI 通过；
 - [ ] 至少手动跑通一次小图片包：上传 -> 分析 -> 去重 -> 裁切 -> caption -> 打包。
