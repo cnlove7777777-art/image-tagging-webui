@@ -34,6 +34,7 @@ Reviewed frontend areas affected by the backend-provider, vision-analysis, and u
   - Added manual model list editor.
   - Added `查询可用模型`, which calls `/api/models?refresh=true` through `getModels(true)`.
   - Added `测试连通性`, which calls `POST /api/models/providers/{provider_id}/test`.
+  - Fixed model-list tab refresh/crash bug: the latest custom model page used native `<button>` elements inside an `el-form`, so clicking `我的收藏 / 自定义 / 动态查询` triggered default form submit and refreshed the page. The UI now uses `el-tabs` plus `@submit.prevent`, and action buttons use explicit non-submit behavior.
   - API Key is never stored in localStorage and never committed to Git. The backend returns only masked key status.
 
 - `api.ts`
@@ -201,5 +202,6 @@ After backend adds `POST /api/tasks/{task_id}/analyze`, add:
 - Do not commit real API keys or `backend/data/runtime/model_provider_secrets.json`.
 - Do not put provider API keys in localStorage.
 - Do not attach model secrets to upload/task requests.
+- Do not use native submit buttons inside settings forms; prefer Element Plus components or explicit `type="button"`/`@submit.prevent`.
 - Keep frontend model selection limited to public provider/model metadata from `/api/models`.
 - Keep vision metadata display read-only until backend schema stabilizes.
