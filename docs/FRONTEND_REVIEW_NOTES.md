@@ -35,6 +35,7 @@ Reviewed frontend areas affected by the backend-provider, vision-analysis, and u
   - Added `查询可用模型`, which calls `/api/models?refresh=true` through `getModels(true)`.
   - Added `测试连通性`, which calls `POST /api/models/providers/{provider_id}/test`.
   - Fixed model-list tab refresh/crash bug: the latest custom model page used native `<button>` elements inside an `el-form`, so clicking `我的收藏 / 自定义 / 动态查询` triggered default form submit and refreshed the page. The UI now uses `el-tabs` plus `@submit.prevent`, and action buttons use explicit non-submit behavior.
+  - Fixed favorite model persistence: favorites now store both model ids and model objects in localStorage, so dynamic-query favorites still show after page refresh even when `queriedModels` is empty. Backward compatibility with the previous `model_data_{provider}` cache is kept.
   - API Key is never stored in localStorage and never committed to Git. The backend returns only masked key status.
 
 - `api.ts`
@@ -203,5 +204,6 @@ After backend adds `POST /api/tasks/{task_id}/analyze`, add:
 - Do not put provider API keys in localStorage.
 - Do not attach model secrets to upload/task requests.
 - Do not use native submit buttons inside settings forms; prefer Element Plus components or explicit `type="button"`/`@submit.prevent`.
+- Do not store favorite models as ids only; persist model id + label/task metadata so favorites survive page refresh without a dynamic-query result in memory.
 - Keep frontend model selection limited to public provider/model metadata from `/api/models`.
 - Keep vision metadata display read-only until backend schema stabilizes.
