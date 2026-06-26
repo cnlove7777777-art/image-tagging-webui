@@ -21,7 +21,7 @@
             :key="provider.id"
             class="provider-item"
             :class="{ active: provider.id === selectedProviderId }"
-            @click="selectedProviderId = provider.id"
+            @click="selectProvider(provider.id)"
           >
             <span class="provider-dot" :class="{ configured: provider.configured }"></span>
             <span class="provider-name">{{ provider.display_name || provider.id }}</span>
@@ -56,7 +56,7 @@
           </div>
         </div>
 
-        <el-form label-width="120px" class="provider-form">
+        <el-form label-width="100px" class="provider-form">
           <el-form-item label="Base URL">
             <el-input v-model="providerForm.base_url" placeholder="例如 https://dashscope.aliyuncs.com/compatible-mode/v1" />
           </el-form-item>
@@ -79,7 +79,6 @@
 
           <el-form-item label="模型列表接口">
             <el-input v-model="providerForm.model_list_path" placeholder="/models" style="max-width: 240px" />
-            <el-switch v-model="providerForm.dynamic_model_list" active-text="动态查询" inactive-text="静态列表" class="inline-switch" />
           </el-form-item>
 
           <el-form-item label="默认视觉模型">
@@ -94,16 +93,88 @@
             <el-input v-model="providerForm.default_tag_model" placeholder="例如 qwen-vl-plus" />
           </el-form-item>
 
-          <el-form-item label="模型列表">
-            <div class="model-editor">
-              <div v-for="(model, index) in providerModels" :key="index" class="model-row">
-                <el-input v-model="model.id" placeholder="模型 ID，例如 qwen-vl-plus" />
-                <el-input v-model="model.label" placeholder="显示名称，可选" />
-                <el-button text type="danger" @click="removeModel(index)">删除</el-button>
-              </div>
-              <el-button plain @click="addModel">+ 添加模型</el-button>
+          <!-- Model tabs -->
+          <div class="model-tabs-section">
+            <div class="model-tabs">
+              <button :class="['model-tab', { active: modelTab === 'favorites' }]" @click="modelTab = 'favorites'">
+                <el-icon><StarFilled /></el-icon> 我的收藏
+              </button>
+              <button :class="['model-tab', { active: modelTab === 'custom' }]" @click="modelTab = 'custom'">
+                <el-icon><Edit /></el-icon> 自定义
+              </button>
+              <button :class="['model-tab', { active: modelTab === 'dynamic' }]" @click="modelTab = 'dynamic'">
+                <el-icon><Search /></el-icon> 动态查询
+              </button>
             </div>
-          </el-form-item>
+
+            <!-- 我的收藏 -->
+            <div v-show="modelTab === 'favorites'" class="model-tab-panel">
+              <div v-if="favoriteModels.length" class="model-list-info">
+                共 {{ favoriteModels.length }} 个收藏
+              </div>
+              <div v-if="favoriteModels.length" class="model-grid">
+                <div v-for="m in favoriteModels" :key="m.id" class="model-grid-item" :class="{ selected: isModelSelected(m.id) }">
+                  <span class="model-grid-id" @click="useModel(m)" title="点击设为默认模型">{{ m.id }}</span>
+                  <el-button text type="warning" size="small" @click.stop="toggleFavorite(m)">
+                    <el-icon><StarFilled /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+              <el-empty v-else description="暂无收藏模型，请到「动态查询」中点击星标添加" :image-size="80" />
+            </div>
+
+            <!-- 自定义 -->
+            <div v-show="modelTab === 'custom'" class="model-tab-panel">
+              <div class="model-editor">
+                <div v-if="providerModels.length" class="model-list-info">
+                  共 {{ providerModels.length }} 个模型
+                </div>
+                <div v-for="(model, pIndex) in paginatedCustomModels" :key="pageIndexBase + pIndex" class="model-row">
+                  <el-input v-model="model.id" placeholder="模型 ID，例如 qwen-vl-plus" />
+                  <el-input v-model="model.label" placeholder="显示名称，可选" />
+                  <el-button text type="danger" @click="removeModel(pageIndexBase + pIndex)">删除</el-button>
+                </div>
+                <div class="model-editor-footer">
+                  <el-button plain @click="addModel">+ 添加模型</el-button>
+                  <el-pagination
+                    v-if="totalCustomPages > 1"
+                    v-model:current-page="modelPage"
+                    :page-size="modelPageSize"
+                    :total="providerModels.length"
+                    layout="prev, pager, next"
+                    small
+                    class="model-pagination"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- 动态查询 -->
+            <div v-show="modelTab === 'dynamic'" class="model-tab-panel">
+              <div class="dynamic-query-bar">
+                <el-button type="primary" :loading="loadingModels" @click="handleDynamicQuery">
+                  <el-icon><Search /></el-icon> 查询可用模型
+                </el-button>
+                <span v-if="queriedModels.length" class="model-list-info" style="margin-left:12px">
+                  共 {{ queriedModels.length }} 个模型
+                </span>
+              </div>
+              <div v-if="queriedModels.length" class="model-grid">
+                <div v-for="m in queriedModels" :key="m.id" class="model-grid-item" :class="{ selected: isModelSelected(m.id) }">
+                  <span class="model-grid-id" @click="useModel(m)" title="点击设为默认模型">{{ m.id }}</span>
+                  <el-button
+                    text
+                    :type="isFavorite(m.id) ? 'warning' : 'info'"
+                    size="small"
+                    @click.stop="toggleFavorite(m)"
+                  >
+                    <el-icon><StarFilled v-if="isFavorite(m.id)" /><Star v-else /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+              <el-empty v-else description="点击「查询可用模型」从供应商获取最新模型列表" :image-size="80" />
+            </div>
+          </div>
 
           <el-form-item label="裁切输出尺寸">
             <el-input v-model="cropOutputSizeText" placeholder="1024x1024" style="width: 220px" />
@@ -112,10 +183,9 @@
         </el-form>
 
         <div class="dialog-footer">
-          <el-button :loading="loadingModels" @click="loadModels(false)">刷新配置</el-button>
-          <el-button :loading="loadingModels" type="primary" plain @click="loadModels(true)">查询可用模型</el-button>
-          <el-button :loading="testingProvider" plain @click="testConnectivity">测试连通性</el-button>
+          <el-button :loading="loadingModels" @click="handleRefresh">刷新配置</el-button>
           <el-button :loading="savingProvider" type="warning" plain @click="saveProviderConfig(true)">保存供应商</el-button>
+          <el-button :loading="testingProvider" plain @click="testConnectivity">测试连通性</el-button>
           <el-button type="primary" @click="saveSettings">保存裁切设置</el-button>
         </div>
 
@@ -170,6 +240,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit, Search, Star, StarFilled } from '@element-plus/icons-vue'
 import {
   createProvider,
   deleteProvider,
@@ -189,6 +260,7 @@ const emit = defineEmits<{
   save: []
 }>()
 
+// ---- State ----
 const cropOutputSizeText = ref('1024x1024')
 const loadingModels = ref(false)
 const savingProvider = ref(false)
@@ -199,7 +271,14 @@ const selectedProviderId = ref('')
 const modelInfo = ref<{ default_provider?: string; providers: ProviderInfo[] }>({ providers: [] })
 const runtimeConfig = ref<ProviderRuntimeConfig>({ provider_id: '' })
 const testResult = ref<ProviderTestResult | null>(null)
+
+// Model lists: providerModels = custom (editable, persisted); queriedModels = dynamic query results
 const providerModels = ref<ProviderModel[]>([])
+const queriedModels = ref<ProviderModel[]>([])
+const favoriteIds = ref<Set<string>>(new Set())
+const modelTab = ref<'favorites' | 'custom' | 'dynamic'>('favorites')
+const modelPage = ref(1)
+const modelPageSize = 20
 
 const providerForm = reactive({
   display_name: '',
@@ -222,13 +301,114 @@ const createForm = reactive({
   default_vision_model: 'qwen-vl-plus'
 })
 
+// ---- Computed ----
 const selectedProvider = computed(() => {
-  return modelInfo.value.providers.find(provider => provider.id === selectedProviderId.value) || modelInfo.value.providers[0]
+  return modelInfo.value.providers.find(p => p.id === selectedProviderId.value) || modelInfo.value.providers[0]
 })
 
-const resetProviderForm = (provider?: ProviderInfo, runtime?: ProviderRuntimeConfig) => {
+const totalCustomPages = computed(() => Math.max(1, Math.ceil(providerModels.value.length / modelPageSize)))
+const pageIndexBase = computed(() => (modelPage.value - 1) * modelPageSize)
+const paginatedCustomModels = computed(() => {
+  const start = pageIndexBase.value
+  return providerModels.value.slice(start, start + modelPageSize)
+})
+
+const favoriteModels = computed(() => {
+  const map = new Map<string, ProviderModel>()
+  for (const m of [...providerModels.value, ...queriedModels.value]) {
+    if (m.id && favoriteIds.value.has(m.id)) map.set(m.id, m)
+  }
+  return [...map.values()].sort((a, b) =>
+    String(a.id || '').localeCompare(String(b.id || ''), undefined, { sensitivity: 'base' })
+  )
+})
+
+// ---- Helpers ----
+function sortAndDedup(models: ProviderModel[]): ProviderModel[] {
+  const seen = new Set<string>()
+  return [...models]
+    .filter(m => {
+      const id = String(m.id || '')
+      if (!id || seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    .sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''), undefined, { sensitivity: 'base' }))
+}
+
+function mapToForm(models: any[]): ProviderModel[] {
+  return (models || []).map(model => ({
+    id: model.id || '',
+    label: model.label || model.id || '',
+    tasks: model.tasks?.length ? model.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
+  }))
+}
+
+function isModelSelected(modelId: string): boolean {
+  return providerForm.default_vision_model === modelId
+}
+
+// ---- Favorites (localStorage, per-provider) ----
+const favoritesStorageKey = computed(() => `model_favorites_${selectedProviderId.value}`)
+
+function loadFavorites() {
+  try {
+    const raw = localStorage.getItem(favoritesStorageKey.value)
+    if (raw) {
+      const ids: string[] = JSON.parse(raw)
+      favoriteIds.value = new Set(ids.filter((id: unknown) => typeof id === 'string' && id))
+    } else {
+      favoriteIds.value = new Set()
+    }
+  } catch {
+    favoriteIds.value = new Set()
+  }
+}
+
+function saveFavorites() {
+  localStorage.setItem(favoritesStorageKey.value, JSON.stringify([...favoriteIds.value]))
+}
+
+function isFavorite(modelId: string) {
+  return favoriteIds.value.has(modelId)
+}
+
+function toggleFavorite(model: ProviderModel) {
+  if (!model.id) return
+  const next = new Set(favoriteIds.value)
+  if (next.has(model.id)) {
+    next.delete(model.id)
+  } else {
+    next.add(model.id)
+    // Persist model label in a companion store
+    const storeKey = `model_data_${selectedProviderId.value}`
+    try {
+      const store: Record<string, { label: string }> = JSON.parse(localStorage.getItem(storeKey) || '{}')
+      store[model.id] = { label: model.label || model.id }
+      localStorage.setItem(storeKey, JSON.stringify(store))
+    } catch { /* ignore */ }
+  }
+  favoriteIds.value = next
+  saveFavorites()
+}
+
+/** Click a model in the grid to set it as the default model */
+function useModel(model: ProviderModel) {
+  if (!model.id) return
+  providerForm.default_vision_model = model.id
+  providerForm.default_focus_model = model.id
+  providerForm.default_tag_model = model.id
+  ElMessage.success(`已选用模型：${model.id}`)
+}
+
+// ---- Form management ----
+function applyProviderToForm(provider: ProviderInfo | undefined, runtime: ProviderRuntimeConfig | undefined) {
   if (!provider) return
-  const models = runtime?.models?.length ? runtime.models : provider.models || []
+  // Custom models: prefer runtime config, fall back to provider static
+  const runtimeModels = runtime?.models?.length ? runtime.models : []
+  const sourceModels = runtimeModels.length ? runtimeModels : (provider.models || [])
+  providerModels.value = sortAndDedup(mapToForm(sourceModels))
+
   providerForm.display_name = runtime?.display_name || provider.display_name || provider.id
   providerForm.enabled = runtime?.enabled ?? provider.enabled ?? true
   providerForm.base_url = runtime?.base_url || provider.base_url || ''
@@ -237,78 +417,109 @@ const resetProviderForm = (provider?: ProviderInfo, runtime?: ProviderRuntimeCon
   providerForm.model_list_path = runtime?.model_list_path || provider.model_list_path || '/models'
   providerForm.dynamic_model_list = runtime?.dynamic_model_list ?? provider.dynamic_model_list ?? true
   providerForm.default_vision_model = runtime?.default_vision_model || provider.default_vision_model || ''
-  providerForm.default_focus_model = runtime?.default_focus_model || provider.default_focus_model || provider.default_vision_model || ''
-  providerForm.default_tag_model = runtime?.default_tag_model || provider.default_tag_model || provider.default_vision_model || ''
-  providerModels.value = models.map(model => ({
-    id: model.id,
-    label: model.label || model.id,
-    tasks: model.tasks || ['vision_analyze', 'focus', 'caption', 'tag']
-  }))
+  providerForm.default_focus_model = runtime?.default_focus_model || provider.default_focus_model || providerForm.default_vision_model
+  providerForm.default_tag_model = runtime?.default_tag_model || provider.default_tag_model || providerForm.default_vision_model
+  modelPage.value = 1
 }
 
-const cleanModels = () => providerModels.value
-  .map(model => ({
-    id: String(model.id || '').trim(),
-    label: String(model.label || model.id || '').trim(),
-    tasks: model.tasks?.length ? model.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
-  }))
-  .filter(model => model.id)
+function cleanModels() {
+  return providerModels.value
+    .map(m => ({
+      id: String(m.id || '').trim(),
+      label: String(m.label || m.id || '').trim(),
+      tasks: m.tasks?.length ? m.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
+    }))
+    .filter(m => m.id)
+}
 
-const addModel = () => {
+function addModel() {
   providerModels.value.push({ id: '', label: '', tasks: ['vision_analyze', 'focus', 'caption', 'tag'] })
+  modelPage.value = Math.ceil(providerModels.value.length / modelPageSize)
 }
 
-const removeModel = (index: number) => {
+function removeModel(index: number) {
   providerModels.value.splice(index, 1)
-}
-
-const parseCropOutputSize = (value: string) => {
-  const raw = String(value || '').trim().toLowerCase()
-  const match = raw.match(/^(\d+)(?:\s*x\s*(\d+))?$/)
-  if (!match) return { size: null, error: '请输入类似 1024x1024 的尺寸' }
-  const size = Number(match[1])
-  const size2 = match[2] ? Number(match[2]) : size
-  if (!Number.isFinite(size) || size <= 0) return { size: null, error: '尺寸必须是正整数' }
-  if (size2 !== size) return { size: null, error: '当前只支持 1:1 正方形输出' }
-  return { size, error: null }
-}
-
-const saveCropOutputSize = async () => {
-  const parsed = parseCropOutputSize(cropOutputSizeText.value)
-  if (!parsed.size) {
-    if (parsed.error) ElMessage.error(parsed.error)
-    return false
-  }
-  const updated = await updateProcessingSettings({ crop_output_size: parsed.size })
-  if (updated?.crop_output_size) {
-    cropOutputSizeText.value = `${updated.crop_output_size}x${updated.crop_output_size}`
-  }
-  return true
-}
-
-const saveSettings = async () => {
-  const ok = await saveCropOutputSize()
-  if (ok) {
-    emit('save')
-    ElMessage.success('裁切设置已保存')
+  if (modelPage.value > 1 && (modelPage.value - 1) * modelPageSize >= providerModels.value.length) {
+    modelPage.value = Math.max(1, Math.ceil(providerModels.value.length / modelPageSize))
   }
 }
 
-const loadRuntimeConfig = async () => {
+// ---- API calls ----
+async function loadRuntimeConfig() {
   if (!selectedProviderId.value) return
   try {
     const data = await getProviderRuntimeConfig(selectedProviderId.value)
     runtimeConfig.value = data
-    resetProviderForm(selectedProvider.value, data)
+    applyProviderToForm(selectedProvider.value, data)
     testResult.value = null
   } catch (error) {
     console.error('Failed to load provider runtime config', error)
     runtimeConfig.value = { provider_id: selectedProviderId.value }
-    resetProviderForm(selectedProvider.value)
+    applyProviderToForm(selectedProvider.value, undefined)
   }
 }
 
-const saveProviderConfig = async (showMessage = true) => {
+async function fetchProviders(refresh = false) {
+  loadingModels.value = true
+  try {
+    const models = await getModels(refresh)
+    const providers = (models as any).providers || []
+    modelInfo.value = { default_provider: (models as any).default_provider, providers }
+    return providers
+  } catch (error) {
+    console.error('Failed to load models', error)
+    ElMessage.error('模型列表加载失败')
+    return []
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+/** Initial load or refresh config (no dynamic query) */
+async function handleRefresh() {
+  const providers = await fetchProviders(false)
+  const target = selectedProviderId.value
+  if (target && providers.some((p: ProviderInfo) => p.id === target)) {
+    // keep current selection
+  } else {
+    selectedProviderId.value = (modelInfo.value as any).default_provider || providers[0]?.id || ''
+  }
+  await loadRuntimeConfig()
+  loadFavorites()
+}
+
+/** Dynamic query: fetch models from provider API */
+async function handleDynamicQuery() {
+  loadingModels.value = true
+  try {
+    const models = await getModels(true)
+    const providers = (models as any).providers || []
+    modelInfo.value = { default_provider: (models as any).default_provider, providers }
+
+    // Find the current provider's models (these are the dynamically fetched ones)
+    const current = providers.find((p: ProviderInfo) => p.id === selectedProviderId.value)
+    if (current?.models?.length) {
+      queriedModels.value = sortAndDedup(mapToForm(current.models))
+    }
+
+    // Also refresh runtime config to keep form in sync, but DON'T reset queriedModels
+    await loadRuntimeConfig()
+    loadFavorites()
+    ElMessage.success(`已查询到 ${queriedModels.value.length} 个模型，点击星标可收藏`)
+  } catch (error) {
+    console.error('Failed to query models', error)
+    ElMessage.error('动态查询失败')
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+function selectProvider(id: string) {
+  if (selectedProviderId.value === id) return
+  selectedProviderId.value = id
+}
+
+async function saveProviderConfig(showMessage = true) {
   if (!selectedProviderId.value) return false
   savingProvider.value = true
   try {
@@ -329,7 +540,6 @@ const saveProviderConfig = async (showMessage = true) => {
     runtimeConfig.value = saved
     providerForm.api_key = ''
     if (showMessage) ElMessage.success('供应商配置已保存到后端本地')
-    await loadModels(false, selectedProviderId.value)
     return true
   } catch (error) {
     console.error('Failed to save provider runtime config', error)
@@ -340,7 +550,7 @@ const saveProviderConfig = async (showMessage = true) => {
   }
 }
 
-const testConnectivity = async () => {
+async function testConnectivity() {
   const saved = await saveProviderConfig(false)
   if (!saved || !selectedProviderId.value) return
   testingProvider.value = true
@@ -360,7 +570,7 @@ const testConnectivity = async () => {
   }
 }
 
-const handleCreateProvider = async () => {
+async function handleCreateProvider() {
   if (!createForm.display_name.trim()) {
     ElMessage.warning('请填写供应商名称')
     return
@@ -381,11 +591,13 @@ const handleCreateProvider = async () => {
       models: createForm.default_vision_model ? [{ id: createForm.default_vision_model, label: createForm.default_vision_model, tasks: ['vision_analyze', 'focus', 'caption', 'tag'] }] : []
     })
     addDialogVisible.value = false
-    selectedProviderId.value = saved.provider_id
     createForm.display_name = ''
     createForm.provider_id = ''
     createForm.api_key = ''
-    await loadModels(false, saved.provider_id)
+    await handleRefresh()
+    selectProvider(saved.provider_id)
+    await loadRuntimeConfig()
+    loadFavorites()
     ElMessage.success('供应商已添加')
   } catch (error) {
     console.error('Failed to create provider', error)
@@ -395,7 +607,7 @@ const handleCreateProvider = async () => {
   }
 }
 
-const handleDeleteProvider = async () => {
+async function handleDeleteProvider() {
   if (!selectedProvider.value) return
   try {
     await ElMessageBox.confirm(`确认删除供应商「${selectedProvider.value.display_name || selectedProvider.value.id}」？`, '删除供应商', { type: 'warning' })
@@ -405,7 +617,8 @@ const handleDeleteProvider = async () => {
   try {
     await deleteProvider(selectedProvider.value.id)
     selectedProviderId.value = ''
-    await loadModels(false)
+    queriedModels.value = []
+    await handleRefresh()
     ElMessage.success('供应商已删除')
   } catch (error) {
     console.error('Failed to delete provider', error)
@@ -413,44 +626,56 @@ const handleDeleteProvider = async () => {
   }
 }
 
-const loadCropOutputSize = async () => {
+// ---- Crop size ----
+function parseCropOutputSize(value: string) {
+  const raw = String(value || '').trim().toLowerCase()
+  const match = raw.match(/^(\d+)(?:\s*x\s*(\d+))?$/)
+  if (!match) return { size: null, error: '请输入类似 1024x1024 的尺寸' }
+  const size = Number(match[1])
+  const size2 = match[2] ? Number(match[2]) : size
+  if (!Number.isFinite(size) || size <= 0) return { size: null, error: '尺寸必须是正整数' }
+  if (size2 !== size) return { size: null, error: '当前只支持 1:1 正方形输出' }
+  return { size, error: null }
+}
+
+async function saveSettings() {
+  const parsed = parseCropOutputSize(cropOutputSizeText.value)
+  if (!parsed.size) {
+    if (parsed.error) ElMessage.error(parsed.error)
+    return
+  }
+  try {
+    const updated = await updateProcessingSettings({ crop_output_size: parsed.size })
+    if (updated?.crop_output_size) {
+      cropOutputSizeText.value = `${updated.crop_output_size}x${updated.crop_output_size}`
+    }
+    emit('save')
+    ElMessage.success('裁切设置已保存')
+  } catch (error) {
+    console.error('Failed to save crop settings', error)
+    ElMessage.error('裁切设置保存失败')
+  }
+}
+
+// ---- Watcher: provider switch ----
+watch(selectedProviderId, (newId) => {
+  if (!newId) return
+  queriedModels.value = []  // clear dynamic results when switching providers
+  loadRuntimeConfig()
+  loadFavorites()
+})
+
+// ---- Init ----
+onMounted(async () => {
   try {
     const settings = await getProcessingSettings()
-    if (settings?.crop_output_size) cropOutputSizeText.value = `${settings.crop_output_size}x${settings.crop_output_size}`
+    if (settings?.crop_output_size) {
+      cropOutputSizeText.value = `${settings.crop_output_size}x${settings.crop_output_size}`
+    }
   } catch (error) {
     console.error('Failed to load crop output size', error)
   }
-}
-
-const loadModels = async (refresh = false, preferredProviderId = '') => {
-  loadingModels.value = true
-  try {
-    const models = await getModels(refresh)
-    const providers = (models as any).providers || []
-    modelInfo.value = { default_provider: (models as any).default_provider, providers }
-    const target = preferredProviderId || selectedProviderId.value
-    if (target && providers.some((provider: ProviderInfo) => provider.id === target)) {
-      selectedProviderId.value = target
-    } else {
-      selectedProviderId.value = (models as any).default_provider || providers[0]?.id || ''
-    }
-    await loadRuntimeConfig()
-    if (refresh) ElMessage.success('模型列表已刷新；若供应商不支持动态接口，将显示本地静态列表')
-  } catch (error) {
-    console.error('Failed to load models', error)
-    ElMessage.error('模型列表加载失败')
-  } finally {
-    loadingModels.value = false
-  }
-}
-
-watch(selectedProviderId, () => {
-  loadRuntimeConfig()
-})
-
-onMounted(() => {
-  loadCropOutputSize()
-  loadModels(false)
+  await handleRefresh()
 })
 </script>
 
@@ -463,7 +688,7 @@ onMounted(() => {
 }
 .manager-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -549,7 +774,7 @@ onMounted(() => {
   gap: 8px;
 }
 .title-input {
-  width: 260px;
+  width: 220px;
   font-size: 20px;
   font-weight: 700;
 }
@@ -566,10 +791,7 @@ onMounted(() => {
   justify-content: flex-end;
 }
 .provider-form {
-  max-width: 880px;
-}
-.inline-switch {
-  margin-left: 12px;
+  max-width: 100%;
 }
 .model-editor {
   display: flex;
@@ -577,11 +799,104 @@ onMounted(() => {
   gap: 8px;
   width: 100%;
 }
+.model-list-info {
+  font-size: 13px;
+  color: var(--muted);
+  padding-bottom: 4px;
+}
 .model-row {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.8fr) auto;
   gap: 8px;
   align-items: center;
+}
+.model-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.model-pagination {
+  flex-shrink: 0;
+}
+
+/* ---- Model Tabs ---- */
+.model-tabs-section {
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.model-tabs {
+  display: flex;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.model-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.model-tab:hover {
+  color: var(--text);
+}
+.model-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.model-tab-panel {
+  padding: 16px 20px;
+  min-height: 120px;
+}
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+.model-grid-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  transition: border-color 0.15s;
+}
+.model-grid-item.selected {
+  border-color: var(--accent);
+  background: rgba(64, 158, 255, 0.08);
+}
+.model-grid-id {
+  font-size: 13px;
+  font-family: monospace;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.model-grid-id:hover {
+  color: var(--accent);
+}
+.dynamic-query-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
 }
 .dialog-footer {
   display: flex;

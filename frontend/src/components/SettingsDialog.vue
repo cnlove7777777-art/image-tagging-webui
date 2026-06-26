@@ -3,7 +3,7 @@
     :model-value="visible"
     @update:model-value="handleClose"
     title="系统设置"
-    width="800px"
+    width="1100px"
     :close-on-click-modal="true"
     :close-on-press-escape="true"
   >

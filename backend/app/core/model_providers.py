@@ -162,13 +162,18 @@ def _try_fetch_dynamic_models(provider: ModelProviderConfig) -> Optional[List[Di
     if not isinstance(data, list):
         return None
     models: List[Dict[str, Any]] = []
+    seen: set = set()
     for item in data:
         if not isinstance(item, dict):
             continue
         model_id = item.get("id") or item.get("model") or item.get("name")
         if not model_id:
             continue
-        models.append({"id": str(model_id), "label": str(model_id), "tasks": ["vision_analyze", "focus", "caption", "tag"]})
+        model_id = str(model_id)
+        if model_id in seen:
+            continue
+        seen.add(model_id)
+        models.append({"id": model_id, "label": model_id, "tasks": ["vision_analyze", "focus", "caption", "tag"]})
     return models or None
 
 
