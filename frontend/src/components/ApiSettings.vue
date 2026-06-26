@@ -1,14 +1,14 @@
 <template>
   <div class="settings-section">
     <el-alert
-      title="模型服务由后端配置"
+      title="模型服务配置保存到后端"
       type="info"
       :closable="false"
       show-icon
       class="provider-alert"
     >
       <div>
-        前端可以选择和查看模型供应商，但 API Key 仍由后端 yml / 环境变量管理。点击“查询可用模型”会请求后端尝试动态拉取 provider 模型列表。
+        这里可以从前端填写供应商 Base URL 和 API Key，但保存位置在后端本地运行时文件，不写入 Git，也不会把完整密钥返回给前端。
       </div>
     </el-alert>
 
@@ -48,8 +48,8 @@
               <div class="provider-sub">{{ selectedProvider.id }}</div>
             </div>
             <div class="provider-tags">
-              <el-tag :type="selectedProvider.configured ? 'success' : 'warning'">
-                {{ selectedProvider.configured ? '后端已配置密钥' : '缺少环境变量密钥' }}
+              <el-tag :type="selectedProvider.configured || runtimeConfig.has_api_key ? 'success' : 'warning'">
+                {{ selectedProvider.configured || runtimeConfig.has_api_key ? '后端已配置密钥' : '缺少后端密钥' }}
               </el-tag>
               <el-tag size="small" :type="selectedProvider.dynamic_model_list ? 'success' : 'info'">
                 {{ selectedProvider.dynamic_model_list ? '支持动态查询' : '静态模型列表' }}
@@ -57,11 +57,39 @@
             </div>
           </div>
           <div class="provider-meta">Base URL：{{ selectedProvider.base_url || '-' }}</div>
+          <div class="provider-meta">已保存密钥：{{ runtimeConfig.api_key_masked || '未保存' }}</div>
           <div class="provider-meta">默认视觉模型：{{ selectedProvider.default_vision_model || '-' }}</div>
           <div class="provider-meta">默认焦点模型：{{ selectedProvider.default_focus_model || '-' }}</div>
           <div class="provider-meta">默认打标模型：{{ selectedProvider.default_tag_model || '-' }}</div>
         </el-card>
         <el-empty v-else description="后端未返回模型供应商" />
+      </el-form-item>
+
+      <el-form-item label="后端 Base URL">
+        <el-input v-model="providerForm.base_url" placeholder="例如 https://dashscope.aliyuncs.com/compatible-mode/v1" />
+        <div class="form-hint">留空并保存会清除本地覆盖，回到 yml 默认值。</div>
+      </el-form-item>
+
+      <el-form-item label="API Key">
+        <el-input
+          v-model="providerForm.api_key"
+          type="password"
+          show-password
+          placeholder="留空表示不修改已保存密钥"
+        />
+        <div class="form-hint">只提交给后端保存；接口返回时只显示脱敏结果，不回显完整 key。</div>
+      </el-form-item>
+
+      <el-form-item label="默认视觉模型">
+        <el-input v-model="providerForm.default_vision_model" placeholder="例如 qwen-vl-plus" />
+      </el-form-item>
+
+      <el-form-item label="默认焦点模型">
+        <el-input v-model="providerForm.default_focus_model" placeholder="例如 qwen-vl-plus" />
+      </el-form-item>
+
+      <el-form-item label="默认打标模型">
+        <el-input v-model="providerForm.default_tag_model" placeholder="例如 qwen-vl-plus" />
       </el-form-item>
 
       <el-form-item label="可用模型">
@@ -83,15 +111,22 @@
     <div class="dialog-footer">
       <el-button :loading="loadingModels" @click="loadModels(false)">刷新配置</el-button>
       <el-button :loading="loadingModels" type="primary" plain @click="loadModels(true)">查询可用模型</el-button>
+      <el-button :loading="savingProvider" type="warning" plain @click="saveProviderConfig">保存模型服务</el-button>
       <el-button type="primary" @click="saveSettings">保存裁切设置</el-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getModels, getProcessingSettings, updateProcessingSettings } from '../services/api'
+import {
+  getModels,
+  getProcessingSettings,
+  getProviderRuntimeConfig,
+  saveProviderRuntimeConfig,
+  updateProcessingSettings
+} from '../services/api'
 
 const emit = defineEmits<{
   save: []
@@ -117,8 +152,17 @@ interface ProviderInfo {
 
 const cropOutputSizeText = ref('1024x1024')
 const loadingModels = ref(false)
+const savingProvider = ref(false)
 const selectedProviderId = ref('')
 const modelInfo = ref<{ default_provider?: string; providers: ProviderInfo[] }>({ providers: [] })
+const runtimeConfig = ref<{ api_key_masked?: string; has_api_key?: boolean }>({})
+const providerForm = reactive({
+  base_url: '',
+  api_key: '',
+  default_vision_model: '',
+  default_focus_model: '',
+  default_tag_model: ''
+})
 
 const selectedProvider = computed(() => {
   return modelInfo.value.providers.find(provider => provider.id === selectedProviderId.value) || modelInfo.value.providers[0]
@@ -162,11 +206,55 @@ const saveSettings = async () => {
   }
 }
 
-const handleProviderChange = () => {
+const loadRuntimeConfig = async () => {
+  if (!selectedProviderId.value) return
+  try {
+    const data = await getProviderRuntimeConfig(selectedProviderId.value)
+    runtimeConfig.value = data
+    const provider = selectedProvider.value
+    providerForm.base_url = data.base_url || provider?.base_url || ''
+    providerForm.api_key = ''
+    providerForm.default_vision_model = data.default_vision_model || provider?.default_vision_model || ''
+    providerForm.default_focus_model = data.default_focus_model || provider?.default_focus_model || ''
+    providerForm.default_tag_model = data.default_tag_model || provider?.default_tag_model || ''
+  } catch (error) {
+    console.error('Failed to load provider runtime config', error)
+    runtimeConfig.value = {}
+  }
+}
+
+const saveProviderConfig = async () => {
+  if (!selectedProviderId.value) return
+  savingProvider.value = true
+  try {
+    const payload: any = {
+      base_url: providerForm.base_url,
+      default_vision_model: providerForm.default_vision_model,
+      default_focus_model: providerForm.default_focus_model,
+      default_tag_model: providerForm.default_tag_model
+    }
+    if (providerForm.api_key.trim()) {
+      payload.api_key = providerForm.api_key.trim()
+    }
+    const saved = await saveProviderRuntimeConfig(selectedProviderId.value, payload)
+    runtimeConfig.value = saved
+    providerForm.api_key = ''
+    ElMessage.success('模型服务配置已保存到后端本地')
+    await loadModels(false)
+  } catch (error) {
+    console.error('Failed to save provider runtime config', error)
+    ElMessage.error('模型服务配置保存失败')
+  } finally {
+    savingProvider.value = false
+  }
+}
+
+const handleProviderChange = async () => {
   const provider = selectedProvider.value
   if (!provider) return
-  if (!provider.configured) {
-    ElMessage.warning(`后端缺少 ${provider.id} 的密钥环境变量`)
+  await loadRuntimeConfig()
+  if (!provider.configured && !runtimeConfig.value.has_api_key) {
+    ElMessage.warning(`后端尚未保存 ${provider.id} 的 API Key`)
   }
 }
 
@@ -193,6 +281,7 @@ const loadModels = async (refresh = false) => {
     if (!selectedProviderId.value || !providers.some((provider: ProviderInfo) => provider.id === selectedProviderId.value)) {
       selectedProviderId.value = (models as any).default_provider || providers[0]?.id || ''
     }
+    await loadRuntimeConfig()
     if (refresh) {
       ElMessage.success('模型列表已刷新；若供应商不支持动态接口，将显示 yml 静态列表')
     }
@@ -203,6 +292,10 @@ const loadModels = async (refresh = false) => {
     loadingModels.value = false
   }
 }
+
+watch(selectedProviderId, () => {
+  loadRuntimeConfig()
+})
 
 onMounted(() => {
   loadCropOutputSize()
