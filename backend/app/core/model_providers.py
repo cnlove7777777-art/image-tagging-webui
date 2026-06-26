@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 import yaml
 
-from app.services.provider_runtime_config import get_provider_runtime_config
+from app.services.provider_runtime_config import get_all_provider_runtime_configs, get_provider_runtime_config, sanitize_models
 
 
 @dataclass
@@ -24,6 +24,8 @@ class ModelProviderConfig:
     default_focus_model: str
     default_tag_model: str
     models: List[Dict[str, Any]]
+    api_format: str = "openai_chat_completions"
+    source: str = "static"
 
     @property
     def runtime_config(self) -> Dict[str, Any]:
@@ -32,7 +34,7 @@ class ModelProviderConfig:
     @property
     def configured(self) -> bool:
         runtime_key = str(self.runtime_config.get("api_key") or "").strip()
-        env_key = os.getenv(self.api_key_env, "").strip()
+        env_key = os.getenv(self.api_key_env, "").strip() if self.api_key_env else ""
         return bool(runtime_key or env_key)
 
     @property
@@ -40,7 +42,7 @@ class ModelProviderConfig:
         runtime_key = str(self.runtime_config.get("api_key") or "").strip()
         if runtime_key:
             return runtime_key
-        return os.getenv(self.api_key_env, "").strip()
+        return os.getenv(self.api_key_env, "").strip() if self.api_key_env else ""
 
 
 def _repo_root() -> Path:
@@ -62,18 +64,41 @@ def _load_yaml() -> Dict[str, Any]:
 
 def _provider_from_dict(provider_id: str, raw: Dict[str, Any]) -> ModelProviderConfig:
     runtime = get_provider_runtime_config(provider_id)
+    static_models = list(raw.get("models") or [])
+    runtime_models = sanitize_models(runtime.get("models"))
     return ModelProviderConfig(
         id=provider_id,
-        enabled=bool(raw.get("enabled", False)),
-        display_name=str(raw.get("display_name") or provider_id),
+        enabled=bool(runtime.get("enabled", raw.get("enabled", False))),
+        display_name=str(runtime.get("display_name") or raw.get("display_name") or provider_id),
         base_url=str(runtime.get("base_url") or raw.get("base_url") or "").rstrip("/"),
         api_key_env=str(raw.get("api_key_env") or ""),
-        dynamic_model_list=bool(raw.get("dynamic_model_list", False)),
-        model_list_path=str(raw.get("model_list_path") or "/models"),
+        dynamic_model_list=bool(runtime.get("dynamic_model_list", raw.get("dynamic_model_list", False))),
+        model_list_path=str(runtime.get("model_list_path") or raw.get("model_list_path") or "/models"),
         default_vision_model=str(runtime.get("default_vision_model") or raw.get("default_vision_model") or raw.get("default_focus_model") or ""),
         default_focus_model=str(runtime.get("default_focus_model") or raw.get("default_focus_model") or raw.get("default_vision_model") or ""),
         default_tag_model=str(runtime.get("default_tag_model") or raw.get("default_tag_model") or raw.get("default_vision_model") or ""),
-        models=list(raw.get("models") or []),
+        models=runtime_models or static_models,
+        api_format=str(runtime.get("api_format") or raw.get("api_format") or "openai_chat_completions"),
+        source="static",
+    )
+
+
+def _provider_from_runtime(provider_id: str, runtime: Dict[str, Any]) -> ModelProviderConfig:
+    models = sanitize_models(runtime.get("models"))
+    return ModelProviderConfig(
+        id=provider_id,
+        enabled=bool(runtime.get("enabled", True)),
+        display_name=str(runtime.get("display_name") or provider_id),
+        base_url=str(runtime.get("base_url") or "").rstrip("/"),
+        api_key_env="",
+        dynamic_model_list=bool(runtime.get("dynamic_model_list", True)),
+        model_list_path=str(runtime.get("model_list_path") or "/models"),
+        default_vision_model=str(runtime.get("default_vision_model") or (models[0]["id"] if models else "")),
+        default_focus_model=str(runtime.get("default_focus_model") or runtime.get("default_vision_model") or (models[0]["id"] if models else "")),
+        default_tag_model=str(runtime.get("default_tag_model") or runtime.get("default_vision_model") or (models[0]["id"] if models else "")),
+        models=models,
+        api_format=str(runtime.get("api_format") or "openai_chat_completions"),
+        source="runtime",
     )
 
 
@@ -84,14 +109,29 @@ def get_default_provider_id() -> str:
 
 def list_providers(include_disabled: bool = False, refresh_dynamic: bool = False) -> List[ModelProviderConfig]:
     raw = _load_yaml()
+    runtime_all = get_all_provider_runtime_configs()
     providers: List[ModelProviderConfig] = []
+    static_ids = set()
+
     for provider_id, provider_raw in (raw.get("providers") or {}).items():
+        static_ids.add(provider_id)
         provider = _provider_from_dict(provider_id, provider_raw or {})
         if not include_disabled and not provider.enabled:
             continue
         if refresh_dynamic:
             provider.models = _try_fetch_dynamic_models(provider) or provider.models
         providers.append(provider)
+
+    for provider_id, runtime in runtime_all.items():
+        if provider_id in static_ids:
+            continue
+        provider = _provider_from_runtime(provider_id, runtime)
+        if not include_disabled and not provider.enabled:
+            continue
+        if refresh_dynamic:
+            provider.models = _try_fetch_dynamic_models(provider) or provider.models
+        providers.append(provider)
+
     return providers
 
 
@@ -158,7 +198,10 @@ def public_provider_payload(refresh_dynamic: bool = False) -> Dict[str, Any]:
                 "enabled": provider.enabled,
                 "configured": provider.configured,
                 "base_url": provider.base_url,
+                "api_format": provider.api_format,
+                "source": provider.source,
                 "dynamic_model_list": provider.dynamic_model_list,
+                "model_list_path": provider.model_list_path,
                 "default_vision_model": provider.default_vision_model,
                 "default_focus_model": provider.default_focus_model,
                 "default_tag_model": provider.default_tag_model,
