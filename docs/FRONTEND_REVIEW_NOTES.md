@@ -4,7 +4,7 @@ Branch: `refactor/vision-analysis-schema`
 
 ## Review scope
 
-Reviewed frontend areas affected by the backend-provider and vision-analysis refactor:
+Reviewed frontend areas affected by the backend-provider, vision-analysis, and upload-flow refactor:
 
 - `frontend/src/App.vue`
 - `frontend/src/components/SettingsDialog.vue`
@@ -14,7 +14,7 @@ Reviewed frontend areas affected by the backend-provider and vision-analysis ref
 - `frontend/src/views/Upload.vue`
 - `frontend/src/views/TaskList.vue`
 
-## Fixed in this pass
+## Fixed in this branch
 
 - `App.vue`
   - Removed stale localStorage dedup settings state that was no longer used by the app shell.
@@ -27,28 +27,37 @@ Reviewed frontend areas affected by the backend-provider and vision-analysis ref
   - Removed stale comments.
 
 - `ApiSettings.vue`
-  - Reworked the page into a backend-provider model service panel.
-  - Added provider dropdown, so users can inspect providers such as Alibaba Cloud DashScope, ModelScope, and OpenAI-compatible services.
-  - Added provider configured/missing-key status.
-  - Added Base URL / API Key / default model fields that submit to backend runtime config endpoints.
-  - Added model list display for the selected provider.
-  - Added `查询可用模型` action, which calls `/api/models?refresh=true` through `getModels(true)`.
+  - Reworked the page into a model provider manager UI.
+  - Added left-side provider list and add-provider dialog.
+  - Added provider add/edit/delete controls.
+  - Added Base URL / API Key / API format / model list path fields.
+  - Added manual model list editor.
+  - Added `查询可用模型`, which calls `/api/models?refresh=true` through `getModels(true)`.
+  - Added `测试连通性`, which calls `POST /api/models/providers/{provider_id}/test`.
   - API Key is never stored in localStorage and never committed to Git. The backend returns only masked key status.
 
 - `api.ts`
-  - Added `getProviderRuntimeConfig()` and `saveProviderRuntimeConfig()`.
+  - Added provider manager client APIs:
+    - `createProvider()`
+    - `deleteProvider()`
+    - `getProviderRuntimeConfig()`
+    - `saveProviderRuntimeConfig()`
+    - `testProviderConnectivity()`
   - Still does not attach model secrets to upload/task requests.
 
-- Previously fixed in this branch
-  - `task.ts`: added `VisionMetadata` types.
+- `task.ts`
+  - Added `VisionMetadata` types.
 
 ## Backend-saved provider config behavior
 
-Frontend now saves model service settings to backend endpoints:
+Frontend saves model service settings to backend endpoints:
 
 ```text
-GET  /api/models/providers/{provider_id}/runtime-config
-POST /api/models/providers/{provider_id}/runtime-config
+POST   /api/models/providers
+DELETE /api/models/providers/{provider_id}
+GET    /api/models/providers/{provider_id}/runtime-config
+POST   /api/models/providers/{provider_id}/runtime-config
+POST   /api/models/providers/{provider_id}/test
 ```
 
 Backend stores runtime secrets in:
@@ -72,14 +81,15 @@ The API response uses masked key fields only:
 
 ## Dynamic model list behavior
 
-`查询可用模型` now calls `getModels(true)`. Backend behavior is:
+`查询可用模型` calls `getModels(true)`. Backend behavior is:
 
 1. Read static provider config from `config/model_providers.yml`.
 2. Apply backend runtime overrides from `backend/data/runtime/model_provider_secrets.json`.
-3. For providers with `dynamic_model_list: true`, try `GET {base_url}/{model_list_path}` with the backend-held API key.
-4. If the provider endpoint fails, is unsupported, or the key is missing, keep the static yml model list.
+3. Include runtime-only custom providers in `/api/models`.
+4. For providers with `dynamic_model_list: true`, try `GET {base_url}/{model_list_path}` with the backend-held API key.
+5. If the provider endpoint fails, is unsupported, or the key is missing, keep the static/manual model list.
 
-This means Alibaba Cloud DashScope can be configured as:
+Alibaba Cloud DashScope example:
 
 ```yaml
 aliyun_dashscope:
@@ -89,7 +99,25 @@ aliyun_dashscope:
   model_list_path: "/models"
 ```
 
-## Remaining frontend issues
+## Upload page review
+
+Current upload behavior:
+
+- ZIP upload uses Element Plus `el-upload` with `accept=".zip"`.
+- Folder upload uses a hidden `webkitdirectory` file input and groups images by folder name.
+- `api.ts` sends ZIP with `uploadTask()` and folders with `uploadFolderTask()`.
+- Backend upload/extraction safety is currently improved through `backend/sitecustomize.py`.
+
+Remaining upload frontend issues:
+
+### P0: Upload.vue ZIP validation and duplicate queue items
+
+`Upload.vue` should explicitly validate ZIP files before queueing:
+
+- reject non-`.zip` files even if the browser file picker allows them;
+- reject empty files;
+- avoid adding the same ZIP more than once by name + size + lastModified;
+- show a clear warning when duplicates are skipped.
 
 ### P0: Upload.vue mojibake messages
 
@@ -107,9 +135,18 @@ ElMessage.success('已保存选择')
 ElMessage.error('保存失败')
 ```
 
-This should be fixed in a small commit together with any other remaining Chinese text cleanup.
+### P1: Upload.vue should display backend provider status
 
-### P0: TaskList.vue stage options need vision_analysis
+Upload page still shows only focus/tag model selects. After provider config is fully connected, it should display:
+
+- current default provider;
+- provider configured / missing key warning;
+- selected model task support;
+- link/button to open the model service settings page.
+
+## TaskList.vue remaining issues
+
+### P0: Stage options need vision_analysis
 
 `TaskStage` now includes `vision_analysis`, but `TaskList.vue` stage filter and tag color logic do not yet include it.
 
@@ -121,7 +158,7 @@ Add:
 
 and map `vision_analysis` to a visible tag type, probably `primary` or `success`.
 
-### P1: TaskList.vue table pagination is visual only
+### P1: Table pagination is visual only
 
 The table currently uses `filteredTasks` directly while pagination exists below the table. This means pagination controls may not actually limit rows.
 
@@ -135,14 +172,6 @@ const pagedTasks = computed(() => {
 ```
 
 Then bind table data to `pagedTasks` instead of `filteredTasks`.
-
-### P1: Upload.vue should display backend provider status
-
-Upload page still shows only focus/tag model selects. After provider config is fully connected, it should display:
-
-- current default provider
-- provider configured / missing key warning
-- selected model task support
 
 ### P1: TaskList.vue should display vision metadata
 
