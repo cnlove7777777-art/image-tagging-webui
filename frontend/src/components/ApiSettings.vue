@@ -8,7 +8,7 @@
       class="provider-alert"
     >
       <div>
-        可以像模型客户端一样添加自定义供应商、保存 Base URL / API Key / 模型列表，并测试连通性。密钥只保存到后端本地运行时文件，不写入 Git，也不回显完整值。
+        可以添加自定义供应商、保存 Base URL / API Key / 模型列表，并测试连通性。密钥只保存到后端本地运行时文件，不写入 Git，也不回显完整值。
       </div>
     </el-alert>
 
@@ -16,20 +16,28 @@
       <aside class="provider-sidebar">
         <div class="sidebar-title">供应商</div>
         <div class="provider-list">
-          <button
+          <el-button
             v-for="provider in modelInfo.providers"
             :key="provider.id"
+            native-type="button"
             class="provider-item"
             :class="{ active: provider.id === selectedProviderId }"
-            @click="selectProvider(provider.id)"
+            @click.prevent="selectProvider(provider.id)"
           >
             <span class="provider-dot" :class="{ configured: provider.configured }"></span>
             <span class="provider-name">{{ provider.display_name || provider.id }}</span>
             <span v-if="provider.source === 'runtime'" class="provider-source">自定义</span>
-          </button>
-          <el-empty v-if="!modelInfo.providers.length" description="暂无供应商" />
+          </el-button>
+          <el-empty v-if="!modelInfo.providers.length" description="暂无供应商" :image-size="80" />
         </div>
-        <el-button class="add-provider-btn" type="primary" plain @click="addDialogVisible = true">
+
+        <el-button
+          class="add-provider-btn"
+          type="primary"
+          plain
+          native-type="button"
+          @click="addDialogVisible = true"
+        >
           + 添加供应商
         </el-button>
       </aside>
@@ -37,9 +45,7 @@
       <main class="provider-detail" v-if="selectedProvider">
         <div class="detail-header">
           <div>
-            <div class="detail-title">
-              <el-input v-model="providerForm.display_name" placeholder="供应商名称" class="title-input" />
-            </div>
+            <el-input v-model="providerForm.display_name" placeholder="供应商名称" class="title-input" />
             <div class="provider-sub">{{ selectedProvider.id }}</div>
           </div>
           <div class="detail-actions">
@@ -50,13 +56,19 @@
               {{ providerForm.enabled ? '启用' : '禁用' }}
             </el-tag>
             <el-switch v-model="providerForm.enabled" active-text="启用" inactive-text="禁用" />
-            <el-button v-if="selectedProvider.source === 'runtime'" type="danger" plain @click="handleDeleteProvider">
+            <el-button
+              v-if="selectedProvider.source === 'runtime'"
+              type="danger"
+              plain
+              native-type="button"
+              @click="handleDeleteProvider"
+            >
               删除
             </el-button>
           </div>
         </div>
 
-        <el-form label-width="100px" class="provider-form">
+        <el-form label-width="110px" class="provider-form" @submit.prevent>
           <el-form-item label="Base URL">
             <el-input v-model="providerForm.base_url" placeholder="例如 https://dashscope.aliyuncs.com/compatible-mode/v1" />
           </el-form-item>
@@ -93,88 +105,72 @@
             <el-input v-model="providerForm.default_tag_model" placeholder="例如 qwen-vl-plus" />
           </el-form-item>
 
-          <!-- Model tabs -->
-          <div class="model-tabs-section">
-            <div class="model-tabs">
-              <button :class="['model-tab', { active: modelTab === 'favorites' }]" @click="modelTab = 'favorites'">
-                <el-icon><StarFilled /></el-icon> 我的收藏
-              </button>
-              <button :class="['model-tab', { active: modelTab === 'custom' }]" @click="modelTab = 'custom'">
-                <el-icon><Edit /></el-icon> 自定义
-              </button>
-              <button :class="['model-tab', { active: modelTab === 'dynamic' }]" @click="modelTab = 'dynamic'">
-                <el-icon><Search /></el-icon> 动态查询
-              </button>
-            </div>
+          <el-form-item label="模型列表">
+            <div class="model-section">
+              <el-tabs v-model="modelTab" class="model-tabs" @tab-change="onModelTabChange">
+                <el-tab-pane label="我的收藏" name="favorites">
+                  <div v-if="favoriteModels.length" class="model-list-info">共 {{ favoriteModels.length }} 个收藏</div>
+                  <div v-if="favoriteModels.length" class="model-grid">
+                    <div
+                      v-for="model in favoriteModels"
+                      :key="model.id"
+                      class="model-grid-item"
+                      :class="{ selected: isModelSelected(model.id) }"
+                    >
+                      <span class="model-grid-id" title="点击设为默认模型" @click="useModel(model)">{{ model.id }}</span>
+                      <el-button text type="warning" size="small" native-type="button" @click.stop="toggleFavorite(model)">
+                        <el-icon><StarFilled /></el-icon>
+                      </el-button>
+                    </div>
+                  </div>
+                  <el-empty v-else description="暂无收藏模型，请到“动态查询”中点击星标添加" :image-size="80" />
+                </el-tab-pane>
 
-            <!-- 我的收藏 -->
-            <div v-show="modelTab === 'favorites'" class="model-tab-panel">
-              <div v-if="favoriteModels.length" class="model-list-info">
-                共 {{ favoriteModels.length }} 个收藏
-              </div>
-              <div v-if="favoriteModels.length" class="model-grid">
-                <div v-for="m in favoriteModels" :key="m.id" class="model-grid-item" :class="{ selected: isModelSelected(m.id) }">
-                  <span class="model-grid-id" @click="useModel(m)" title="点击设为默认模型">{{ m.id }}</span>
-                  <el-button text type="warning" size="small" @click.stop="toggleFavorite(m)">
-                    <el-icon><StarFilled /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <el-empty v-else description="暂无收藏模型，请到「动态查询」中点击星标添加" :image-size="80" />
-            </div>
+                <el-tab-pane label="自定义" name="custom">
+                  <div class="model-editor">
+                    <div v-if="providerModels.length" class="model-list-info">共 {{ providerModels.length }} 个模型</div>
+                    <div v-for="(model, index) in providerModels" :key="`${model.id || 'new'}-${index}`" class="model-row">
+                      <el-input v-model="model.id" placeholder="模型 ID，例如 qwen-vl-plus" />
+                      <el-input v-model="model.label" placeholder="显示名称，可选" />
+                      <el-button text type="danger" native-type="button" @click="removeModel(index)">删除</el-button>
+                    </div>
+                    <el-button plain native-type="button" @click="addModel">+ 添加模型</el-button>
+                  </div>
+                </el-tab-pane>
 
-            <!-- 自定义 -->
-            <div v-show="modelTab === 'custom'" class="model-tab-panel">
-              <div class="model-editor">
-                <div v-if="providerModels.length" class="model-list-info">
-                  共 {{ providerModels.length }} 个模型
-                </div>
-                <div v-for="(model, pIndex) in paginatedCustomModels" :key="pageIndexBase + pIndex" class="model-row">
-                  <el-input v-model="model.id" placeholder="模型 ID，例如 qwen-vl-plus" />
-                  <el-input v-model="model.label" placeholder="显示名称，可选" />
-                  <el-button text type="danger" @click="removeModel(pageIndexBase + pIndex)">删除</el-button>
-                </div>
-                <div class="model-editor-footer">
-                  <el-button plain @click="addModel">+ 添加模型</el-button>
-                  <el-pagination
-                    v-if="totalCustomPages > 1"
-                    v-model:current-page="modelPage"
-                    :page-size="modelPageSize"
-                    :total="providerModels.length"
-                    layout="prev, pager, next"
-                    small
-                    class="model-pagination"
-                  />
-                </div>
-              </div>
-            </div>
+                <el-tab-pane label="动态查询" name="dynamic">
+                  <div class="dynamic-query-bar">
+                    <el-button type="primary" :loading="loadingModels" native-type="button" @click="handleDynamicQuery">
+                      <el-icon><Search /></el-icon>
+                      查询可用模型
+                    </el-button>
+                    <span v-if="queriedModels.length" class="model-list-info">共 {{ queriedModels.length }} 个模型</span>
+                  </div>
 
-            <!-- 动态查询 -->
-            <div v-show="modelTab === 'dynamic'" class="model-tab-panel">
-              <div class="dynamic-query-bar">
-                <el-button type="primary" :loading="loadingModels" @click="handleDynamicQuery">
-                  <el-icon><Search /></el-icon> 查询可用模型
-                </el-button>
-                <span v-if="queriedModels.length" class="model-list-info" style="margin-left:12px">
-                  共 {{ queriedModels.length }} 个模型
-                </span>
-              </div>
-              <div v-if="queriedModels.length" class="model-grid">
-                <div v-for="m in queriedModels" :key="m.id" class="model-grid-item" :class="{ selected: isModelSelected(m.id) }">
-                  <span class="model-grid-id" @click="useModel(m)" title="点击设为默认模型">{{ m.id }}</span>
-                  <el-button
-                    text
-                    :type="isFavorite(m.id) ? 'warning' : 'info'"
-                    size="small"
-                    @click.stop="toggleFavorite(m)"
-                  >
-                    <el-icon><StarFilled v-if="isFavorite(m.id)" /><Star v-else /></el-icon>
-                  </el-button>
-                </div>
-              </div>
-              <el-empty v-else description="点击「查询可用模型」从供应商获取最新模型列表" :image-size="80" />
+                  <div v-if="queriedModels.length" class="model-grid">
+                    <div
+                      v-for="model in queriedModels"
+                      :key="model.id"
+                      class="model-grid-item"
+                      :class="{ selected: isModelSelected(model.id) }"
+                    >
+                      <span class="model-grid-id" title="点击设为默认模型" @click="useModel(model)">{{ model.id }}</span>
+                      <el-button
+                        text
+                        :type="isFavorite(model.id) ? 'warning' : 'info'"
+                        size="small"
+                        native-type="button"
+                        @click.stop="toggleFavorite(model)"
+                      >
+                        <el-icon><StarFilled v-if="isFavorite(model.id)" /><Star v-else /></el-icon>
+                      </el-button>
+                    </div>
+                  </div>
+                  <el-empty v-else description="点击“查询可用模型”从供应商获取最新模型列表" :image-size="80" />
+                </el-tab-pane>
+              </el-tabs>
             </div>
-          </div>
+          </el-form-item>
 
           <el-form-item label="裁切输出尺寸">
             <el-input v-model="cropOutputSizeText" placeholder="1024x1024" style="width: 220px" />
@@ -183,10 +179,10 @@
         </el-form>
 
         <div class="dialog-footer">
-          <el-button :loading="loadingModels" @click="handleRefresh">刷新配置</el-button>
-          <el-button :loading="savingProvider" type="warning" plain @click="saveProviderConfig(true)">保存供应商</el-button>
-          <el-button :loading="testingProvider" plain @click="testConnectivity">测试连通性</el-button>
-          <el-button type="primary" @click="saveSettings">保存裁切设置</el-button>
+          <el-button :loading="loadingModels" native-type="button" @click="handleRefresh">刷新配置</el-button>
+          <el-button :loading="savingProvider" type="warning" plain native-type="button" @click="saveProviderConfig(true)">保存供应商</el-button>
+          <el-button :loading="testingProvider" plain native-type="button" @click="testConnectivity">测试连通性</el-button>
+          <el-button type="primary" native-type="button" @click="saveSettings">保存裁切设置</el-button>
         </div>
 
         <el-alert
@@ -200,9 +196,7 @@
           <div v-if="testResult.ok">
             状态码：{{ testResult.status_code }}；模型数量：{{ testResult.model_count ?? '未知' }}；样例：{{ testResult.sample_models?.join(', ') || '-' }}
           </div>
-          <div v-else>
-            {{ testResult.error || '未知错误' }}
-          </div>
+          <div v-else>{{ testResult.error || '未知错误' }}</div>
         </el-alert>
       </main>
 
@@ -212,7 +206,7 @@
     </div>
 
     <el-dialog v-model="addDialogVisible" title="添加供应商" width="520px">
-      <el-form label-width="110px">
+      <el-form label-width="110px" @submit.prevent>
         <el-form-item label="供应商名称">
           <el-input v-model="createForm.display_name" placeholder="例如 阿里云百炼" />
         </el-form-item>
@@ -230,8 +224,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="addDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creatingProvider" @click="handleCreateProvider">添加</el-button>
+        <el-button native-type="button" @click="addDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creatingProvider" native-type="button" @click="handleCreateProvider">添加</el-button>
       </template>
     </el-dialog>
   </div>
@@ -240,7 +234,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, Search, Star, StarFilled } from '@element-plus/icons-vue'
+import { Search, Star, StarFilled } from '@element-plus/icons-vue'
 import {
   createProvider,
   deleteProvider,
@@ -260,7 +254,6 @@ const emit = defineEmits<{
   save: []
 }>()
 
-// ---- State ----
 const cropOutputSizeText = ref('1024x1024')
 const loadingModels = ref(false)
 const savingProvider = ref(false)
@@ -272,13 +265,10 @@ const modelInfo = ref<{ default_provider?: string; providers: ProviderInfo[] }>(
 const runtimeConfig = ref<ProviderRuntimeConfig>({ provider_id: '' })
 const testResult = ref<ProviderTestResult | null>(null)
 
-// Model lists: providerModels = custom (editable, persisted); queriedModels = dynamic query results
 const providerModels = ref<ProviderModel[]>([])
 const queriedModels = ref<ProviderModel[]>([])
 const favoriteIds = ref<Set<string>>(new Set())
 const modelTab = ref<'favorites' | 'custom' | 'dynamic'>('favorites')
-const modelPage = ref(1)
-const modelPageSize = 20
 
 const providerForm = reactive({
   display_name: '',
@@ -301,65 +291,52 @@ const createForm = reactive({
   default_vision_model: 'qwen-vl-plus'
 })
 
-// ---- Computed ----
 const selectedProvider = computed(() => {
-  return modelInfo.value.providers.find(p => p.id === selectedProviderId.value) || modelInfo.value.providers[0]
-})
-
-const totalCustomPages = computed(() => Math.max(1, Math.ceil(providerModels.value.length / modelPageSize)))
-const pageIndexBase = computed(() => (modelPage.value - 1) * modelPageSize)
-const paginatedCustomModels = computed(() => {
-  const start = pageIndexBase.value
-  return providerModels.value.slice(start, start + modelPageSize)
+  return modelInfo.value.providers.find(provider => provider.id === selectedProviderId.value) || modelInfo.value.providers[0]
 })
 
 const favoriteModels = computed(() => {
-  const map = new Map<string, ProviderModel>()
-  for (const m of [...providerModels.value, ...queriedModels.value]) {
-    if (m.id && favoriteIds.value.has(m.id)) map.set(m.id, m)
+  const merged = new Map<string, ProviderModel>()
+  for (const model of [...providerModels.value, ...queriedModels.value]) {
+    if (model.id && favoriteIds.value.has(model.id)) merged.set(model.id, model)
   }
-  return [...map.values()].sort((a, b) =>
-    String(a.id || '').localeCompare(String(b.id || ''), undefined, { sensitivity: 'base' })
-  )
+  return [...merged.values()].sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''), undefined, { sensitivity: 'base' }))
 })
 
-// ---- Helpers ----
 function sortAndDedup(models: ProviderModel[]): ProviderModel[] {
   const seen = new Set<string>()
   return [...models]
-    .filter(m => {
-      const id = String(m.id || '')
-      if (!id || seen.has(id)) return false
-      seen.add(id)
+    .map(model => ({
+      id: String(model.id || '').trim(),
+      label: String(model.label || model.id || '').trim(),
+      tasks: model.tasks?.length ? model.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
+    }))
+    .filter(model => {
+      if (!model.id || seen.has(model.id)) return false
+      seen.add(model.id)
       return true
     })
     .sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''), undefined, { sensitivity: 'base' }))
 }
 
 function mapToForm(models: any[]): ProviderModel[] {
-  return (models || []).map(model => ({
-    id: model.id || '',
-    label: model.label || model.id || '',
-    tasks: model.tasks?.length ? model.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
-  }))
+  return sortAndDedup((models || []).map(model => ({
+    id: model?.id || model?.model || model?.name || '',
+    label: model?.label || model?.id || model?.model || model?.name || '',
+    tasks: model?.tasks?.length ? model.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
+  })))
 }
 
 function isModelSelected(modelId: string): boolean {
   return providerForm.default_vision_model === modelId
 }
 
-// ---- Favorites (localStorage, per-provider) ----
 const favoritesStorageKey = computed(() => `model_favorites_${selectedProviderId.value}`)
 
 function loadFavorites() {
   try {
     const raw = localStorage.getItem(favoritesStorageKey.value)
-    if (raw) {
-      const ids: string[] = JSON.parse(raw)
-      favoriteIds.value = new Set(ids.filter((id: unknown) => typeof id === 'string' && id))
-    } else {
-      favoriteIds.value = new Set()
-    }
+    favoriteIds.value = raw ? new Set((JSON.parse(raw) || []).filter((id: unknown) => typeof id === 'string' && id)) : new Set()
   } catch {
     favoriteIds.value = new Set()
   }
@@ -376,23 +353,12 @@ function isFavorite(modelId: string) {
 function toggleFavorite(model: ProviderModel) {
   if (!model.id) return
   const next = new Set(favoriteIds.value)
-  if (next.has(model.id)) {
-    next.delete(model.id)
-  } else {
-    next.add(model.id)
-    // Persist model label in a companion store
-    const storeKey = `model_data_${selectedProviderId.value}`
-    try {
-      const store: Record<string, { label: string }> = JSON.parse(localStorage.getItem(storeKey) || '{}')
-      store[model.id] = { label: model.label || model.id }
-      localStorage.setItem(storeKey, JSON.stringify(store))
-    } catch { /* ignore */ }
-  }
+  if (next.has(model.id)) next.delete(model.id)
+  else next.add(model.id)
   favoriteIds.value = next
   saveFavorites()
 }
 
-/** Click a model in the grid to set it as the default model */
 function useModel(model: ProviderModel) {
   if (!model.id) return
   providerForm.default_vision_model = model.id
@@ -401,13 +367,15 @@ function useModel(model: ProviderModel) {
   ElMessage.success(`已选用模型：${model.id}`)
 }
 
-// ---- Form management ----
-function applyProviderToForm(provider: ProviderInfo | undefined, runtime: ProviderRuntimeConfig | undefined) {
+function onModelTabChange() {
+  // Element Plus tabs do not submit forms, but keep this as a single safe hook.
+}
+
+function applyProviderToForm(provider: ProviderInfo | undefined, runtime?: ProviderRuntimeConfig) {
   if (!provider) return
-  // Custom models: prefer runtime config, fall back to provider static
   const runtimeModels = runtime?.models?.length ? runtime.models : []
   const sourceModels = runtimeModels.length ? runtimeModels : (provider.models || [])
-  providerModels.value = sortAndDedup(mapToForm(sourceModels))
+  providerModels.value = mapToForm(sourceModels)
 
   providerForm.display_name = runtime?.display_name || provider.display_name || provider.id
   providerForm.enabled = runtime?.enabled ?? provider.enabled ?? true
@@ -419,32 +387,20 @@ function applyProviderToForm(provider: ProviderInfo | undefined, runtime: Provid
   providerForm.default_vision_model = runtime?.default_vision_model || provider.default_vision_model || ''
   providerForm.default_focus_model = runtime?.default_focus_model || provider.default_focus_model || providerForm.default_vision_model
   providerForm.default_tag_model = runtime?.default_tag_model || provider.default_tag_model || providerForm.default_vision_model
-  modelPage.value = 1
 }
 
 function cleanModels() {
-  return providerModels.value
-    .map(m => ({
-      id: String(m.id || '').trim(),
-      label: String(m.label || m.id || '').trim(),
-      tasks: m.tasks?.length ? m.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
-    }))
-    .filter(m => m.id)
+  return sortAndDedup(providerModels.value)
 }
 
 function addModel() {
   providerModels.value.push({ id: '', label: '', tasks: ['vision_analyze', 'focus', 'caption', 'tag'] })
-  modelPage.value = Math.ceil(providerModels.value.length / modelPageSize)
 }
 
 function removeModel(index: number) {
   providerModels.value.splice(index, 1)
-  if (modelPage.value > 1 && (modelPage.value - 1) * modelPageSize >= providerModels.value.length) {
-    modelPage.value = Math.max(1, Math.ceil(providerModels.value.length / modelPageSize))
-  }
 }
 
-// ---- API calls ----
 async function loadRuntimeConfig() {
   if (!selectedProviderId.value) return
   try {
@@ -455,7 +411,7 @@ async function loadRuntimeConfig() {
   } catch (error) {
     console.error('Failed to load provider runtime config', error)
     runtimeConfig.value = { provider_id: selectedProviderId.value }
-    applyProviderToForm(selectedProvider.value, undefined)
+    applyProviderToForm(selectedProvider.value)
   }
 }
 
@@ -475,20 +431,16 @@ async function fetchProviders(refresh = false) {
   }
 }
 
-/** Initial load or refresh config (no dynamic query) */
 async function handleRefresh() {
   const providers = await fetchProviders(false)
   const target = selectedProviderId.value
-  if (target && providers.some((p: ProviderInfo) => p.id === target)) {
-    // keep current selection
-  } else {
-    selectedProviderId.value = (modelInfo.value as any).default_provider || providers[0]?.id || ''
+  if (!target || !providers.some((provider: ProviderInfo) => provider.id === target)) {
+    selectedProviderId.value = modelInfo.value.default_provider || providers[0]?.id || ''
   }
   await loadRuntimeConfig()
   loadFavorites()
 }
 
-/** Dynamic query: fetch models from provider API */
 async function handleDynamicQuery() {
   loadingModels.value = true
   try {
@@ -496,14 +448,8 @@ async function handleDynamicQuery() {
     const providers = (models as any).providers || []
     modelInfo.value = { default_provider: (models as any).default_provider, providers }
 
-    // Find the current provider's models (these are the dynamically fetched ones)
-    const current = providers.find((p: ProviderInfo) => p.id === selectedProviderId.value)
-    if (current?.models?.length) {
-      queriedModels.value = sortAndDedup(mapToForm(current.models))
-    }
-
-    // Also refresh runtime config to keep form in sync, but DON'T reset queriedModels
-    await loadRuntimeConfig()
+    const current = providers.find((provider: ProviderInfo) => provider.id === selectedProviderId.value)
+    queriedModels.value = current?.models?.length ? mapToForm(current.models) : []
     loadFavorites()
     ElMessage.success(`已查询到 ${queriedModels.value.length} 个模型，点击星标可收藏`)
   } catch (error) {
@@ -515,7 +461,7 @@ async function handleDynamicQuery() {
 }
 
 function selectProvider(id: string) {
-  if (selectedProviderId.value === id) return
+  if (!id || selectedProviderId.value === id) return
   selectedProviderId.value = id
 }
 
@@ -557,11 +503,8 @@ async function testConnectivity() {
   try {
     const result = await testProviderConnectivity(selectedProviderId.value, providerForm.default_vision_model)
     testResult.value = result
-    if (result.ok) {
-      ElMessage.success('连通性测试成功')
-    } else {
-      ElMessage.error('连通性测试失败')
-    }
+    if (result.ok) ElMessage.success('连通性测试成功')
+    else ElMessage.error('连通性测试失败')
   } catch (error) {
     console.error('Failed to test provider', error)
     ElMessage.error('连通性测试失败')
@@ -588,7 +531,9 @@ async function handleCreateProvider() {
       default_vision_model: createForm.default_vision_model,
       default_focus_model: createForm.default_vision_model,
       default_tag_model: createForm.default_vision_model,
-      models: createForm.default_vision_model ? [{ id: createForm.default_vision_model, label: createForm.default_vision_model, tasks: ['vision_analyze', 'focus', 'caption', 'tag'] }] : []
+      models: createForm.default_vision_model
+        ? [{ id: createForm.default_vision_model, label: createForm.default_vision_model, tasks: ['vision_analyze', 'focus', 'caption', 'tag'] }]
+        : []
     })
     addDialogVisible.value = false
     createForm.display_name = ''
@@ -626,7 +571,6 @@ async function handleDeleteProvider() {
   }
 }
 
-// ---- Crop size ----
 function parseCropOutputSize(value: string) {
   const raw = String(value || '').trim().toLowerCase()
   const match = raw.match(/^(\d+)(?:\s*x\s*(\d+))?$/)
@@ -646,9 +590,7 @@ async function saveSettings() {
   }
   try {
     const updated = await updateProcessingSettings({ crop_output_size: parsed.size })
-    if (updated?.crop_output_size) {
-      cropOutputSizeText.value = `${updated.crop_output_size}x${updated.crop_output_size}`
-    }
+    if (updated?.crop_output_size) cropOutputSizeText.value = `${updated.crop_output_size}x${updated.crop_output_size}`
     emit('save')
     ElMessage.success('裁切设置已保存')
   } catch (error) {
@@ -657,21 +599,17 @@ async function saveSettings() {
   }
 }
 
-// ---- Watcher: provider switch ----
 watch(selectedProviderId, (newId) => {
   if (!newId) return
-  queriedModels.value = []  // clear dynamic results when switching providers
+  queriedModels.value = []
   loadRuntimeConfig()
   loadFavorites()
 })
 
-// ---- Init ----
 onMounted(async () => {
   try {
     const settings = await getProcessingSettings()
-    if (settings?.crop_output_size) {
-      cropOutputSizeText.value = `${settings.crop_output_size}x${settings.crop_output_size}`
-    }
+    if (settings?.crop_output_size) cropOutputSizeText.value = `${settings.crop_output_size}x${settings.crop_output_size}`
   } catch (error) {
     console.error('Failed to load crop output size', error)
   }
@@ -719,8 +657,8 @@ onMounted(async () => {
   color: var(--text);
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
-  cursor: pointer;
   text-align: left;
 }
 .provider-item:hover,
@@ -745,7 +683,9 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.provider-source {
+.provider-source,
+.provider-sub,
+.form-hint {
   font-size: 12px;
   color: var(--muted);
 }
@@ -768,20 +708,10 @@ onMounted(async () => {
   gap: 16px;
   margin-bottom: 20px;
 }
-.detail-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .title-input {
-  width: 220px;
+  width: 260px;
   font-size: 20px;
   font-weight: 700;
-}
-.provider-sub,
-.form-hint {
-  font-size: 12px;
-  color: var(--muted);
 }
 .detail-actions {
   display: flex;
@@ -793,72 +723,28 @@ onMounted(async () => {
 .provider-form {
   max-width: 100%;
 }
+.model-section {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 14px 14px;
+}
+.model-list-info {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
 .model-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 100%;
 }
-.model-list-info {
-  font-size: 13px;
-  color: var(--muted);
-  padding-bottom: 4px;
-}
 .model-row {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.8fr) auto;
   gap: 8px;
   align-items: center;
-}
-.model-editor-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.model-pagination {
-  flex-shrink: 0;
-}
-
-/* ---- Model Tabs ---- */
-.model-tabs-section {
-  margin-bottom: 18px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.model-tabs {
-  display: flex;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-}
-.model-tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 12px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 14px;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s, border-color 0.15s;
-}
-.model-tab:hover {
-  color: var(--text);
-}
-.model-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
-.model-tab-panel {
-  padding: 16px 20px;
-  min-height: 120px;
 }
 .model-grid {
   display: grid;
@@ -874,7 +760,6 @@ onMounted(async () => {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--panel);
-  transition: border-color 0.15s;
 }
 .model-grid-item.selected {
   border-color: var(--accent);
@@ -888,7 +773,6 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 0.15s;
 }
 .model-grid-id:hover {
   color: var(--accent);
@@ -896,6 +780,7 @@ onMounted(async () => {
 .dynamic-query-bar {
   display: flex;
   align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 }
 .dialog-footer {
