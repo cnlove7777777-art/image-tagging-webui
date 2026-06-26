@@ -23,28 +23,61 @@ Reviewed frontend areas affected by the backend-provider and vision-analysis ref
   - Kept theme switching, sidebar task list, route syncing, and refresh timer behavior.
 
 - `SettingsDialog.vue`
-  - Renamed the old `API设置` tab to `模型服务`, because API Key / Base URL are now backend-owned provider settings.
+  - Renamed the old `API设置` tab to `模型服务`, because provider configuration is now a backend-managed model service panel.
   - Removed stale comments.
 
 - `ApiSettings.vue`
   - Reworked the page into a backend-provider model service panel.
   - Added provider dropdown, so users can inspect providers such as Alibaba Cloud DashScope, ModelScope, and OpenAI-compatible services.
   - Added provider configured/missing-key status.
+  - Added Base URL / API Key / default model fields that submit to backend runtime config endpoints.
   - Added model list display for the selected provider.
   - Added `查询可用模型` action, which calls `/api/models?refresh=true` through `getModels(true)`.
-  - Kept API secrets out of the frontend. API Key remains backend/env-owned.
+  - API Key is never stored in localStorage and never committed to Git. The backend returns only masked key status.
+
+- `api.ts`
+  - Added `getProviderRuntimeConfig()` and `saveProviderRuntimeConfig()`.
+  - Still does not attach model secrets to upload/task requests.
 
 - Previously fixed in this branch
-  - `api.ts`: stopped sending `X-Ext-Api-Key`, `X-Ext-Base-Url`, `X-Ext-Models`, `api_key`, and `base_url` from the frontend.
   - `task.ts`: added `VisionMetadata` types.
+
+## Backend-saved provider config behavior
+
+Frontend now saves model service settings to backend endpoints:
+
+```text
+GET  /api/models/providers/{provider_id}/runtime-config
+POST /api/models/providers/{provider_id}/runtime-config
+```
+
+Backend stores runtime secrets in:
+
+```text
+backend/data/runtime/model_provider_secrets.json
+```
+
+This path is covered by `.gitignore` through `backend/data/`, so runtime secrets do not enter the repository.
+
+The API response uses masked key fields only:
+
+```json
+{
+  "provider_id": "aliyun_dashscope",
+  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "api_key_masked": "sk-x...abcd",
+  "has_api_key": true
+}
+```
 
 ## Dynamic model list behavior
 
 `查询可用模型` now calls `getModels(true)`. Backend behavior is:
 
 1. Read static provider config from `config/model_providers.yml`.
-2. For providers with `dynamic_model_list: true`, try `GET {base_url}/{model_list_path}` with backend env API key.
-3. If the provider endpoint fails, is unsupported, or the env key is missing, keep the static yml model list.
+2. Apply backend runtime overrides from `backend/data/runtime/model_provider_secrets.json`.
+3. For providers with `dynamic_model_list: true`, try `GET {base_url}/{model_list_path}` with the backend-held API key.
+4. If the provider endpoint fails, is unsupported, or the key is missing, keep the static yml model list.
 
 This means Alibaba Cloud DashScope can be configured as:
 
@@ -136,7 +169,8 @@ After backend adds `POST /api/tasks/{task_id}/analyze`, add:
 
 ## Do not regress
 
-- Do not reintroduce frontend API Key / Base URL forms.
-- Do not send model secrets from `api.ts`.
+- Do not commit real API keys or `backend/data/runtime/model_provider_secrets.json`.
+- Do not put provider API keys in localStorage.
+- Do not attach model secrets to upload/task requests.
 - Keep frontend model selection limited to public provider/model metadata from `/api/models`.
 - Keep vision metadata display read-only until backend schema stabilizes.
