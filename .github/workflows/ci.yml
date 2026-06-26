@@ -54,7 +54,7 @@ jobs:
           pip install PyYAML==6.0.2 httpx==0.27.0 pydantic==2.6.1 pydantic-settings==2.1.0 python-dotenv==1.0.1
 
       - name: Compile backend source
-        run: python -m compileall app
+        run: python -m compileall app sitecustomize.py
 
       - name: Validate provider config can load
         env:
@@ -110,4 +110,37 @@ jobs:
           score = semantic_similarity(a, b)
           assert score['is_similar'] is True
           print('semantic_score=', score)
+          PY
+
+      - name: Validate safe zip extraction patch
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          import os
+          import tempfile
+          import zipfile
+          import sitecustomize  # noqa: F401, ensures patch is active
+
+          with tempfile.TemporaryDirectory() as tmp:
+              archive = os.path.join(tmp, 'sample.zip')
+              out_dir = os.path.join(tmp, 'out')
+              os.makedirs(out_dir, exist_ok=True)
+              with zipfile.ZipFile(archive, 'w') as zf:
+                  zf.writestr('safe/测试.jpg', b'data')
+              with zipfile.ZipFile(archive, 'r') as zf:
+                  info = zf.infolist()[0]
+                  zf.extract(info, out_dir)
+                  assert os.path.exists(os.path.join(out_dir, 'safe', '测试.jpg'))
+
+              evil = os.path.join(tmp, 'evil.zip')
+              with zipfile.ZipFile(evil, 'w') as zf:
+                  zf.writestr('../evil.jpg', b'data')
+              with zipfile.ZipFile(evil, 'r') as zf:
+                  try:
+                      zf.extract(zf.infolist()[0], out_dir)
+                  except ValueError:
+                      pass
+                  else:
+                      raise AssertionError('unsafe zip path was not rejected')
           PY
