@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 import httpx
 import yaml
 
+from app.services.provider_runtime_config import get_provider_runtime_config
+
 
 @dataclass
 class ModelProviderConfig:
@@ -24,11 +26,20 @@ class ModelProviderConfig:
     models: List[Dict[str, Any]]
 
     @property
+    def runtime_config(self) -> Dict[str, Any]:
+        return get_provider_runtime_config(self.id)
+
+    @property
     def configured(self) -> bool:
-        return bool(os.getenv(self.api_key_env, "").strip())
+        runtime_key = str(self.runtime_config.get("api_key") or "").strip()
+        env_key = os.getenv(self.api_key_env, "").strip()
+        return bool(runtime_key or env_key)
 
     @property
     def api_key(self) -> str:
+        runtime_key = str(self.runtime_config.get("api_key") or "").strip()
+        if runtime_key:
+            return runtime_key
         return os.getenv(self.api_key_env, "").strip()
 
 
@@ -50,17 +61,18 @@ def _load_yaml() -> Dict[str, Any]:
 
 
 def _provider_from_dict(provider_id: str, raw: Dict[str, Any]) -> ModelProviderConfig:
+    runtime = get_provider_runtime_config(provider_id)
     return ModelProviderConfig(
         id=provider_id,
         enabled=bool(raw.get("enabled", False)),
         display_name=str(raw.get("display_name") or provider_id),
-        base_url=str(raw.get("base_url") or "").rstrip("/"),
+        base_url=str(runtime.get("base_url") or raw.get("base_url") or "").rstrip("/"),
         api_key_env=str(raw.get("api_key_env") or ""),
         dynamic_model_list=bool(raw.get("dynamic_model_list", False)),
         model_list_path=str(raw.get("model_list_path") or "/models"),
-        default_vision_model=str(raw.get("default_vision_model") or raw.get("default_focus_model") or ""),
-        default_focus_model=str(raw.get("default_focus_model") or raw.get("default_vision_model") or ""),
-        default_tag_model=str(raw.get("default_tag_model") or raw.get("default_vision_model") or ""),
+        default_vision_model=str(runtime.get("default_vision_model") or raw.get("default_vision_model") or raw.get("default_focus_model") or ""),
+        default_focus_model=str(runtime.get("default_focus_model") or raw.get("default_focus_model") or raw.get("default_vision_model") or ""),
+        default_tag_model=str(runtime.get("default_tag_model") or raw.get("default_tag_model") or raw.get("default_vision_model") or ""),
         models=list(raw.get("models") or []),
     )
 
