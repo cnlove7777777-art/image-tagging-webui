@@ -268,6 +268,7 @@ const testResult = ref<ProviderTestResult | null>(null)
 const providerModels = ref<ProviderModel[]>([])
 const queriedModels = ref<ProviderModel[]>([])
 const favoriteIds = ref<Set<string>>(new Set())
+const favoriteModelStore = ref<Record<string, ProviderModel>>({})
 const modelTab = ref<'favorites' | 'custom' | 'dynamic'>('favorites')
 
 const providerForm = reactive({
@@ -297,20 +298,28 @@ const selectedProvider = computed(() => {
 
 const favoriteModels = computed(() => {
   const merged = new Map<string, ProviderModel>()
+  for (const [id, model] of Object.entries(favoriteModelStore.value)) {
+    if (favoriteIds.value.has(id)) merged.set(id, model)
+  }
   for (const model of [...providerModels.value, ...queriedModels.value]) {
-    if (model.id && favoriteIds.value.has(model.id)) merged.set(model.id, model)
+    if (model.id && favoriteIds.value.has(model.id)) merged.set(model.id, normalizeModel(model))
   }
   return [...merged.values()].sort((a, b) => String(a.id || '').localeCompare(String(b.id || ''), undefined, { sensitivity: 'base' }))
 })
 
+function normalizeModel(model: ProviderModel): ProviderModel {
+  const id = String(model.id || '').trim()
+  return {
+    id,
+    label: String(model.label || id).trim(),
+    tasks: model.tasks?.length ? model.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
+  }
+}
+
 function sortAndDedup(models: ProviderModel[]): ProviderModel[] {
   const seen = new Set<string>()
   return [...models]
-    .map(model => ({
-      id: String(model.id || '').trim(),
-      label: String(model.label || model.id || '').trim(),
-      tasks: model.tasks?.length ? model.tasks : ['vision_analyze', 'focus', 'caption', 'tag']
-    }))
+    .map(normalizeModel)
     .filter(model => {
       if (!model.id || seen.has(model.id)) return false
       seen.add(model.id)
@@ -332,18 +341,65 @@ function isModelSelected(modelId: string): boolean {
 }
 
 const favoritesStorageKey = computed(() => `model_favorites_${selectedProviderId.value}`)
+const favoriteModelsStorageKey = computed(() => `model_favorite_data_${selectedProviderId.value}`)
+const legacyFavoriteModelsStorageKey = computed(() => `model_data_${selectedProviderId.value}`)
 
 function loadFavorites() {
   try {
-    const raw = localStorage.getItem(favoritesStorageKey.value)
-    favoriteIds.value = raw ? new Set((JSON.parse(raw) || []).filter((id: unknown) => typeof id === 'string' && id)) : new Set()
+    const rawIds = localStorage.getItem(favoritesStorageKey.value)
+    const rawModels = localStorage.getItem(favoriteModelsStorageKey.value) || localStorage.getItem(legacyFavoriteModelsStorageKey.value)
+    const modelData: Record<string, ProviderModel> = {}
+
+    if (rawModels) {
+      const parsed = JSON.parse(rawModels)
+      if (parsed && typeof parsed === 'object') {
+        for (const [id, value] of Object.entries(parsed)) {
+          const raw = value as any
+          const model = normalizeModel({
+            id: raw?.id || id,
+            label: raw?.label || raw?.id || id,
+            tasks: raw?.tasks
+          })
+          if (model.id) modelData[model.id] = model
+        }
+      }
+    }
+
+    let ids: string[] = []
+    if (rawIds) {
+      const parsedIds = JSON.parse(rawIds)
+      ids = Array.isArray(parsedIds) ? parsedIds.filter((id: unknown) => typeof id === 'string' && id) : []
+    }
+    if (!ids.length && Object.keys(modelData).length) {
+      ids = Object.keys(modelData)
+    }
+
+    favoriteIds.value = new Set(ids)
+    favoriteModelStore.value = modelData
   } catch {
     favoriteIds.value = new Set()
+    favoriteModelStore.value = {}
   }
 }
 
 function saveFavorites() {
+  const nextStore: Record<string, ProviderModel> = {}
+  const currentModels = new Map<string, ProviderModel>()
+  for (const model of [...Object.values(favoriteModelStore.value), ...providerModels.value, ...queriedModels.value]) {
+    const normalized = normalizeModel(model)
+    if (normalized.id) currentModels.set(normalized.id, normalized)
+  }
+
+  for (const id of favoriteIds.value) {
+    const model = currentModels.get(id) || normalizeModel({ id })
+    if (model.id) nextStore[model.id] = model
+  }
+
+  favoriteModelStore.value = nextStore
   localStorage.setItem(favoritesStorageKey.value, JSON.stringify([...favoriteIds.value]))
+  localStorage.setItem(favoriteModelsStorageKey.value, JSON.stringify(nextStore))
+  // Keep the legacy key in sync for older local data / rollback compatibility.
+  localStorage.setItem(legacyFavoriteModelsStorageKey.value, JSON.stringify(nextStore))
 }
 
 function isFavorite(modelId: string) {
@@ -351,11 +407,22 @@ function isFavorite(modelId: string) {
 }
 
 function toggleFavorite(model: ProviderModel) {
-  if (!model.id) return
-  const next = new Set(favoriteIds.value)
-  if (next.has(model.id)) next.delete(model.id)
-  else next.add(model.id)
-  favoriteIds.value = next
+  const normalized = normalizeModel(model)
+  if (!normalized.id) return
+
+  const nextIds = new Set(favoriteIds.value)
+  const nextStore = { ...favoriteModelStore.value }
+
+  if (nextIds.has(normalized.id)) {
+    nextIds.delete(normalized.id)
+    delete nextStore[normalized.id]
+  } else {
+    nextIds.add(normalized.id)
+    nextStore[normalized.id] = normalized
+  }
+
+  favoriteIds.value = nextIds
+  favoriteModelStore.value = nextStore
   saveFavorites()
 }
 
