@@ -28,9 +28,11 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 - [x] Never return full API keys to frontend; return only masked status.
 - [x] Add provider connectivity test endpoint: `POST /api/models/providers/{provider_id}/test`.
 - [x] Add dynamic model list refresh through `/api/models?refresh=true`.
+- [x] Fix provider model-list tab refresh/crash bug by replacing native form buttons with `el-tabs` and adding `@submit.prevent`.
 - [ ] Remove backend acceptance of `api_key`, `base_url`, `X-Ext-Api-Key`, `X-Ext-Base-Url` from task creation endpoints.
 - [ ] Add explicit `provider` field to task creation.
 - [ ] Store provider id in task config or schema.
+- [ ] Remove accidentally committed Vite cache files under `.vite/deps/` and add `.vite/` to `.gitignore` if missing.
 
 ## P0.5: Upload / archive reliability
 
@@ -75,6 +77,7 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 - [x] Add provider add/edit/delete controls.
 - [x] Add connectivity test button.
 - [x] Add manual model list editor.
+- [x] Fix model-list tab click refresh/crash in `ApiSettings.vue`.
 - [ ] Show visual metadata in task detail image cards:
   - shot type
   - body visibility
@@ -105,6 +108,7 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 - [ ] Add unit tests for vision JSON sanitization.
 - [ ] Add unit tests for semantic similarity scoring.
 - [ ] Add unit tests for archive extraction edge cases.
+- [ ] Add frontend regression test or smoke checklist for provider settings tabs.
 
 ## Notes
 
@@ -113,3 +117,4 @@ The VLM should output crop coordinates plus structured metadata for pose, framin
 - The current branch has not yet completed the processing pipeline rewrite. It is safe as a partial refactor branch, not yet ready to merge into `main`.
 - `processing.py` and `main.py` are large legacy files. Continue by changing them in small, reviewable commits rather than one full-file rewrite.
 - `backend/sitecustomize.py` is a pragmatic safety patch for ZIP extraction. Prefer replacing it with an explicit helper when touching `processing.py` deeply.
+- Avoid native submit-capable `<button>` elements inside settings forms. Use Element Plus components, `native-type="button"`, or `@submit.prevent` to prevent accidental full-page refreshes.
