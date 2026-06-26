@@ -26,10 +26,35 @@ Reviewed frontend areas affected by the backend-provider and vision-analysis ref
   - Renamed the old `API设置` tab to `模型服务`, because API Key / Base URL are now backend-owned provider settings.
   - Removed stale comments.
 
+- `ApiSettings.vue`
+  - Reworked the page into a backend-provider model service panel.
+  - Added provider dropdown, so users can inspect providers such as Alibaba Cloud DashScope, ModelScope, and OpenAI-compatible services.
+  - Added provider configured/missing-key status.
+  - Added model list display for the selected provider.
+  - Added `查询可用模型` action, which calls `/api/models?refresh=true` through `getModels(true)`.
+  - Kept API secrets out of the frontend. API Key remains backend/env-owned.
+
 - Previously fixed in this branch
-  - `ApiSettings.vue`: removed API Key / Base URL input fields and now displays backend provider status.
   - `api.ts`: stopped sending `X-Ext-Api-Key`, `X-Ext-Base-Url`, `X-Ext-Models`, `api_key`, and `base_url` from the frontend.
   - `task.ts`: added `VisionMetadata` types.
+
+## Dynamic model list behavior
+
+`查询可用模型` now calls `getModels(true)`. Backend behavior is:
+
+1. Read static provider config from `config/model_providers.yml`.
+2. For providers with `dynamic_model_list: true`, try `GET {base_url}/{model_list_path}` with backend env API key.
+3. If the provider endpoint fails, is unsupported, or the env key is missing, keep the static yml model list.
+
+This means Alibaba Cloud DashScope can be configured as:
+
+```yaml
+aliyun_dashscope:
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  api_key_env: "DASHSCOPE_API_KEY"
+  dynamic_model_list: true
+  model_list_path: "/models"
+```
 
 ## Remaining frontend issues
 
