@@ -20,7 +20,10 @@ export interface ProviderInfo {
   enabled?: boolean
   configured?: boolean
   base_url?: string
+  api_format?: string
+  source?: string
   dynamic_model_list?: boolean
+  model_list_path?: string
   default_vision_model?: string
   default_focus_model?: string
   default_tag_model?: string
@@ -29,20 +32,42 @@ export interface ProviderInfo {
 
 export interface ProviderRuntimeConfig {
   provider_id: string
+  display_name?: string
+  enabled?: boolean
   base_url?: string
+  api_format?: string
+  model_list_path?: string
+  dynamic_model_list?: boolean
   api_key_masked?: string
   has_api_key?: boolean
   default_vision_model?: string
   default_focus_model?: string
   default_tag_model?: string
+  models?: ProviderModel[]
 }
 
 export interface ProviderRuntimeConfigUpdate {
+  display_name?: string
+  enabled?: boolean
   base_url?: string
   api_key?: string
+  api_format?: string
+  model_list_path?: string
+  dynamic_model_list?: boolean
   default_vision_model?: string
   default_focus_model?: string
   default_tag_model?: string
+  models?: ProviderModel[]
+}
+
+export interface ProviderTestResult {
+  ok: boolean
+  provider_id: string
+  url?: string
+  status_code?: number
+  model_count?: number | null
+  sample_models?: string[]
+  error?: string
 }
 
 export interface ModelList {
@@ -99,6 +124,16 @@ export const getModels = async (refresh = false): Promise<ModelList> => {
   return response.data
 }
 
+export const createProvider = async (payload: ProviderRuntimeConfigUpdate & { provider_id?: string; display_name: string }): Promise<ProviderRuntimeConfig> => {
+  const response = await api.post<ProviderRuntimeConfig>('/models/providers', payload)
+  return response.data
+}
+
+export const deleteProvider = async (providerId: string) => {
+  const response = await api.delete(`/models/providers/${providerId}`)
+  return response.data
+}
+
 export const getProviderRuntimeConfig = async (providerId: string): Promise<ProviderRuntimeConfig> => {
   const response = await api.get<ProviderRuntimeConfig>(`/models/providers/${providerId}/runtime-config`)
   return response.data
@@ -109,6 +144,11 @@ export const saveProviderRuntimeConfig = async (
   payload: ProviderRuntimeConfigUpdate
 ): Promise<ProviderRuntimeConfig> => {
   const response = await api.post<ProviderRuntimeConfig>(`/models/providers/${providerId}/runtime-config`, payload)
+  return response.data
+}
+
+export const testProviderConnectivity = async (providerId: string, model?: string): Promise<ProviderTestResult> => {
+  const response = await api.post<ProviderTestResult>(`/models/providers/${providerId}/test`, { model })
   return response.data
 }
 
